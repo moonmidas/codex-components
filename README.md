@@ -68,7 +68,7 @@ npm start -- --no-launch --port 9229
 3. Press `Cmd + K` on macOS or `Ctrl + K` on Windows/Linux.
 4. Search and run registered commands.
 
-Seed the bundled DiscordUI example:
+Seed the bundled command palette example:
 
 ```bash
 npm run seed
@@ -81,7 +81,7 @@ npm run seed
 - `src/seed-mods.js`: copies bundled mods into the user mod folder.
 - `runtime/codexmod-runtime.js`: browser-side framework.
 - `runtime/codexmod.css`: native-feeling base UI.
-- `runtime/mods/discord-ui.js`: bundled command palette and component example.
+- `runtime/mods/command-palette.js`: bundled Codex quick actions for the command palette.
 - `examples/hello-mod.js`: minimal third-party mod template.
 
 ## Safety
