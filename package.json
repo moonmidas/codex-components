@@ -1,0 +1,22 @@
+{
+  "name": "codexmod",
+  "version": "0.1.0",
+  "description": "A safe CDP-based modding framework for the OpenAI Codex desktop app.",
+  "type": "module",
+  "bin": {
+    "codexmod": "./bin/codexmod.js"
+  },
+  "scripts": {
+    "start": "node ./bin/codexmod.js",
+    "inject": "node ./src/injector.js",
+    "seed": "node ./src/seed-mods.js",
+    "check": "node --check ./bin/codexmod.js && node --check ./src/injector.js && node --check ./src/seed-mods.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
