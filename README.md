@@ -4,6 +4,8 @@ CodexMod is a user-installable modding framework for the OpenAI Codex desktop ap
 
 It does not unpack, patch, repackage, or modify `Codex.app`.
 
+Think of it as the unofficial extension system OpenAI never shipped.
+
 ## Is Codex Electron-based?
 
 Yes for the installed macOS app this repository targets. The local app at `/Applications/Codex.app/Contents/` identifies as an Electron app: `Info.plist` includes `NSPrincipalClass = AtomApplication`, `ElectronAsarIntegrity`, and an Electron-style `Resources/app.asar` entry. Public docs and app packaging can change, so CodexMod treats this as a runtime fact to verify per release rather than a permanent API contract.
@@ -14,8 +16,9 @@ Yes for the installed macOS app this repository targets. The local app at `/Appl
 2. `src/injector.js` polls `http://127.0.0.1:<port>/json`, finds Codex renderer targets, and attaches over CDP.
 3. The injector installs `runtime/codexmod-runtime.js` and `runtime/codexmod.css` through `Runtime.evaluate` and `Page.addScriptToEvaluateOnNewDocument`.
 4. The runtime creates `window.CodexMod`, binds `Cmd/Ctrl + K`, and loads every `.js` file in `~/.codexmod/mods/`.
-5. Mods call the API to register commands, components, styles, DOM observers, and output rendering hooks.
-6. The injector keeps polling so new renderer targets receive the runtime after reloads or navigation.
+5. A tiny core shell provides settings, mod enablement, reload, and DevTools access even if user mods are disabled.
+6. Mods call the API to register commands, components, styles, DOM observers, and output rendering hooks.
+7. The injector keeps polling so new renderer targets receive the runtime after reloads or navigation.
 
 ## Install
 
@@ -68,6 +71,18 @@ npm start -- --no-launch --port 9229
 3. Press `Cmd + K` on macOS or `Ctrl + K` on Windows/Linux.
 4. Search and run registered commands.
 
+Core controls:
+
+- Click the small `CM` button in the lower-right corner to open CodexMod settings.
+- Press `Cmd/Ctrl + Shift + ,` to open CodexMod settings.
+- Use `Open CodexMod Settings`, `Reload CodexMod`, or `Open Codex Renderer DevTools` from the command palette.
+
+CodexMod stores config at:
+
+```bash
+~/.codexmod/config.json
+```
+
 Seed the bundled command palette example:
 
 ```bash
@@ -83,6 +98,18 @@ npm run seed
 - `runtime/codexmod.css`: native-feeling base UI.
 - `runtime/mods/command-palette.js`: bundled Codex quick actions for the command palette.
 - `examples/hello-mod.js`: minimal third-party mod template.
+
+## Development
+
+The injector starts a local control server on `127.0.0.1:9230`:
+
+- `GET /mods`: list installed user mods.
+- `GET /config`: read config.
+- `POST /config`: save config and reload.
+- `POST /reload`: reinject runtime and enabled mods.
+- `GET /devtools`: return the Codex renderer DevTools URL.
+
+When `dev.liveReload` is enabled, changes in `~/.codexmod/mods/` and `runtime/` trigger reinjection automatically.
 
 ## Safety
 

@@ -9,9 +9,41 @@ export const runtimeDir = join(projectRoot, "runtime");
 export const bundledModsDir = join(runtimeDir, "mods");
 export const userRoot = join(homedir(), ".codexmod");
 export const userModsDir = join(userRoot, "mods");
+export const userConfigPath = join(userRoot, "config.json");
+
+export const defaultConfig = {
+  enabledMods: null,
+  dev: {
+    liveReload: true,
+    showToasts: true
+  },
+  ui: {
+    paletteShortcut: "mod+k"
+  }
+};
 
 export async function ensureUserDirs() {
   await mkdir(userModsDir, { recursive: true });
+}
+
+export async function readConfig() {
+  await ensureUserDirs();
+  if (!existsSync(userConfigPath)) {
+    await writeConfig(defaultConfig);
+    return structuredClone(defaultConfig);
+  }
+
+  const parsed = JSON.parse(await readText(userConfigPath));
+  return {
+    ...structuredClone(defaultConfig),
+    ...parsed,
+    dev: { ...defaultConfig.dev, ...(parsed.dev || {}) },
+    ui: { ...defaultConfig.ui, ...(parsed.ui || {}) }
+  };
+}
+
+export async function writeConfig(config) {
+  await writeText(userConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export async function readText(file) {

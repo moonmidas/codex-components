@@ -8,7 +8,10 @@
     componentTypes: new Map(),
     outputHooks: new Set(),
     disposers: [],
-    palette: null
+    palette: null,
+    settings: null,
+    payload: null,
+    controlBaseUrl: ""
   };
 
   function log(level, ...args) {
@@ -41,6 +44,13 @@
       domReady,
       injectStyle: (id, css) => injectStyle(`codexmod-${modName}-${id}`, css),
       notify: (message, options = {}) => notify(message, options),
+      requestControl,
+      reload: () => reloadCodexMod(),
+      openSettings,
+      openDevTools,
+      getConfig: () => structuredClone(state.payload?.config || {}),
+      setConfig: (config) => saveConfig(config),
+      listMods: () => requestControl("/mods").then((result) => result.mods || []),
       registerCommand(command) {
         if (!command?.id || !command?.title || typeof command.run !== "function") {
           throw new Error("registerCommand requires { id, title, run }");
@@ -81,12 +91,25 @@
     };
   }
 
+  async function requestControl(path, options = {}) {
+    if (!state.controlBaseUrl) throw new Error("CodexMod control server is unavailable");
+    const response = await fetch(`${state.controlBaseUrl}${path}`, {
+      method: options.method || "GET",
+      headers: { "content-type": "application/json" },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    const body = await response.json();
+    if (!response.ok || body.ok === false) throw new Error(body.error || `Request failed: ${path}`);
+    return body;
+  }
+
   function domReady() {
     if (document.readyState !== "loading") return Promise.resolve();
     return new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
   }
 
   function notify(message, options = {}) {
+    if (state.payload?.config?.dev?.showToasts === false && !options.force) return;
     const host = document.createElement("div");
     host.className = `codexmod-toast codexmod-toast-${options.tone || "info"}`;
     host.textContent = message;
@@ -96,6 +119,170 @@
       host.classList.remove("is-visible");
       setTimeout(() => host.remove(), 160);
     }, options.duration || 2600);
+  }
+
+  function ensureCoreButton() {
+    if (document.querySelector(".codexmod-core-button")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "codexmod-core-button";
+    button.title = "CodexMod";
+    button.textContent = "CM";
+    button.addEventListener("click", openSettings);
+    document.body.appendChild(button);
+    state.disposers.push(() => button.remove());
+  }
+
+  function ensureSettings() {
+    if (state.settings) return state.settings;
+
+    const overlay = document.createElement("div");
+    overlay.className = "codexmod-settings-overlay";
+    overlay.innerHTML = `
+      <div class="codexmod-settings" role="dialog" aria-modal="true" aria-label="CodexMod settings">
+        <header class="codexmod-settings-header">
+          <div>
+            <h2>CodexMod</h2>
+            <p>The unofficial extension system OpenAI never shipped.</p>
+          </div>
+          <button type="button" class="codexmod-icon-button" data-action="close" aria-label="Close">×</button>
+        </header>
+        <section class="codexmod-settings-grid">
+          <div class="codexmod-settings-panel">
+            <h3>Runtime</h3>
+            <dl class="codexmod-kv">
+              <div><dt>Version</dt><dd data-field="version"></dd></div>
+              <div><dt>Loaded mods</dt><dd data-field="loadedMods"></dd></div>
+              <div><dt>Mod folder</dt><dd data-field="modsPath"></dd></div>
+            </dl>
+            <div class="codexmod-settings-actions">
+              <button type="button" data-action="reload">Reload Mods</button>
+              <button type="button" data-action="devtools">DevTools</button>
+            </div>
+          </div>
+          <div class="codexmod-settings-panel">
+            <h3>Installed Mods</h3>
+            <div class="codexmod-mod-list" data-field="modList"></div>
+          </div>
+          <div class="codexmod-settings-panel">
+            <h3>Developer</h3>
+            <label class="codexmod-switch"><input type="checkbox" data-field="liveReload" /> <span>Live reload changed files</span></label>
+            <label class="codexmod-switch"><input type="checkbox" data-field="showToasts" /> <span>Show runtime toasts</span></label>
+          </div>
+        </section>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay || event.target.dataset.action === "close") closeSettings();
+      if (event.target.dataset.action === "reload") reloadCodexMod();
+      if (event.target.dataset.action === "devtools") openDevTools();
+    });
+
+    overlay.querySelector('[data-field="liveReload"]').addEventListener("change", (event) => {
+      const config = createUpdatedConfig((draft) => {
+        draft.dev.liveReload = event.target.checked;
+      });
+      saveConfig(config);
+    });
+
+    overlay.querySelector('[data-field="showToasts"]').addEventListener("change", (event) => {
+      const config = createUpdatedConfig((draft) => {
+        draft.dev.showToasts = event.target.checked;
+      });
+      saveConfig(config);
+    });
+
+    state.settings = { overlay };
+    state.disposers.push(() => overlay.remove());
+    return state.settings;
+  }
+
+  function createUpdatedConfig(mutator) {
+    const current = structuredClone(state.payload?.config || {});
+    current.dev ||= {};
+    current.ui ||= {};
+    mutator(current);
+    return current;
+  }
+
+  async function refreshSettings() {
+    const settings = ensureSettings();
+    const config = state.payload?.config || {};
+    const loadedMods = [...state.mods.keys()];
+    settings.overlay.querySelector('[data-field="version"]').textContent = state.version;
+    settings.overlay.querySelector('[data-field="loadedMods"]').textContent = String(loadedMods.length);
+    settings.overlay.querySelector('[data-field="modsPath"]').textContent = state.payload?.paths?.userModsDir || "";
+    settings.overlay.querySelector('[data-field="liveReload"]').checked = config.dev?.liveReload !== false;
+    settings.overlay.querySelector('[data-field="showToasts"]').checked = config.dev?.showToasts !== false;
+
+    const list = settings.overlay.querySelector('[data-field="modList"]');
+    list.replaceChildren();
+    const installed = await requestControl("/mods").then((result) => result.mods || []).catch(() => loadedMods);
+    const enabled = Array.isArray(config.enabledMods) ? new Set(config.enabledMods) : null;
+
+    installed.forEach((modName) => {
+      const row = document.createElement("label");
+      row.className = "codexmod-mod-row";
+      row.innerHTML = `
+        <input type="checkbox" />
+        <span></span>
+        <small></small>`;
+      row.querySelector("span").textContent = modName;
+      row.querySelector("small").textContent = loadedMods.includes(modName) ? "loaded" : "disabled";
+      const checkbox = row.querySelector("input");
+      checkbox.checked = !enabled || enabled.has(modName);
+      checkbox.addEventListener("change", () => toggleMod(modName, checkbox.checked));
+      list.appendChild(row);
+    });
+
+    if (!installed.length) {
+      const empty = document.createElement("div");
+      empty.className = "codexmod-palette-empty";
+      empty.textContent = "No mods installed";
+      list.appendChild(empty);
+    }
+  }
+
+  function openSettings() {
+    ensureSettings().overlay.classList.add("is-open");
+    refreshSettings();
+  }
+
+  function closeSettings() {
+    if (state.settings) state.settings.overlay.classList.remove("is-open");
+  }
+
+  async function saveConfig(config) {
+    await requestControl("/config", { method: "POST", body: { config } });
+    state.payload.config = config;
+    notify("CodexMod settings saved");
+  }
+
+  async function toggleMod(modName, enabled) {
+    const installed = await requestControl("/mods").then((result) => result.mods || []);
+    const config = createUpdatedConfig((draft) => {
+      const current = Array.isArray(draft.enabledMods) ? new Set(draft.enabledMods) : new Set(installed);
+      if (enabled) current.add(modName);
+      else current.delete(modName);
+      draft.enabledMods = [...current].sort();
+    });
+    await saveConfig(config);
+  }
+
+  async function reloadCodexMod() {
+    await requestControl("/reload", { method: "POST" });
+    notify("CodexMod reloaded", { force: true });
+  }
+
+  async function openDevTools() {
+    const result = await requestControl("/devtools");
+    if (!result.devtoolsUrl) {
+      notify("No DevTools target found", { tone: "warn", force: true });
+      return;
+    }
+    window.open(result.devtoolsUrl, "_blank");
+    notify("Opened DevTools");
   }
 
   function observe(selector, callback, options = {}) {
@@ -247,10 +434,39 @@
         event.preventDefault();
         event.stopPropagation();
         openPalette();
+      } else if (event.key === "," && (event.metaKey || event.ctrlKey) && event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        openSettings();
       }
     };
     window.addEventListener("keydown", handler, true);
     state.disposers.push(() => window.removeEventListener("keydown", handler, true));
+  }
+
+  function registerCoreCommands() {
+    const api = createApi("core");
+    state.disposers.push(api.registerCommand({
+      id: "open-settings",
+      title: "Open CodexMod Settings",
+      subtitle: "Manage mods, reload, and developer tools",
+      keywords: "settings preferences mods manager configure",
+      run: openSettings
+    }));
+    state.disposers.push(api.registerCommand({
+      id: "reload",
+      title: "Reload CodexMod",
+      subtitle: "Reinject runtime and reload enabled mods",
+      keywords: "reload refresh reinject mods",
+      run: reloadCodexMod
+    }));
+    state.disposers.push(api.registerCommand({
+      id: "open-devtools",
+      title: "Open Codex Renderer DevTools",
+      subtitle: "Inspect the injected UI through Chrome DevTools",
+      keywords: "devtools inspect debug cdp",
+      run: openDevTools
+    }));
   }
 
   function installOutputBridge() {
@@ -285,15 +501,22 @@
   async function install(payload) {
     uninstallPrevious();
     await domReady();
+    state.payload = payload;
+    state.controlBaseUrl = payload.control?.port ? `http://127.0.0.1:${payload.control.port}` : "";
     injectStyle("codexmod-base-css", payload.baseCss || "");
     bindGlobalShortcut();
     installOutputBridge();
+    ensureCoreButton();
+    registerCoreCommands();
 
     window.CodexMod = {
       version: state.version,
       api: createApi("console"),
       openPalette,
       closePalette,
+      openSettings,
+      reload: reloadCodexMod,
+      openDevTools,
       dispose() {
         while (state.disposers.length) safe(() => state.disposers.pop()(), "dispose");
         document.querySelectorAll('[id^="codexmod-"], .codexmod-palette-overlay, .codexmod-toast').forEach((node) => node.remove());
@@ -302,6 +525,7 @@
         state.componentTypes.clear();
         state.outputHooks.clear();
         state.palette = null;
+        state.settings = null;
       }
     };
 

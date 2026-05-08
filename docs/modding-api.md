@@ -41,6 +41,26 @@ Returns a disposer.
 
 Opens or closes the global command palette.
 
+### `api.openSettings()`
+
+Opens the core CodexMod settings modal. This UI is part of the runtime, not a mod, so users can recover if a mod breaks.
+
+### `api.reload()`
+
+Asks the local CodexMod control server to reinject the runtime and reload enabled mods.
+
+### `api.openDevTools()`
+
+Opens the Chrome DevTools frontend for the current Codex renderer target.
+
+### `api.getConfig()` and `api.setConfig(config)`
+
+Reads or writes `~/.codexmod/config.json`. Saving config triggers a reload.
+
+### `api.listMods()`
+
+Returns the installed `.js` mods in `~/.codexmod/mods/`.
+
 ### `api.injectStyle(id, css)`
 
 Adds or replaces a namespaced style tag for your mod.

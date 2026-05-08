@@ -10,7 +10,7 @@
     "start": "node ./bin/codexmod.js",
     "inject": "node ./src/injector.js",
     "seed": "node ./src/seed-mods.js",
-    "check": "node --check ./bin/codexmod.js && node --check ./src/injector.js && node --check ./src/seed-mods.js"
+    "check": "node --check ./bin/codexmod.js && node --check ./src/injector.js && node --check ./src/seed-mods.js && node --check ./runtime/codexmod-runtime.js && node --check ./runtime/mods/command-palette.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
