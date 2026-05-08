@@ -125,7 +125,7 @@
 .codexmod-toast {
   position: fixed;
   right: 18px;
-  bottom: 18px;
+  bottom: var(--codexmod-toast-offset, 18px);
   z-index: 2147483647;
   max-width: min(360px, calc(100vw - 36px));
   transform: translateY(8px);

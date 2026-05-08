@@ -4,6 +4,7 @@
   const state = {
     version: "0.1.0",
     mods: new Map(),
+    availableMods: [],
     commands: new Map(),
     componentTypes: new Map(),
     outputHooks: new Set(),
@@ -114,11 +115,21 @@
     host.className = `codexmod-toast codexmod-toast-${options.tone || "info"}`;
     host.textContent = message;
     document.body.appendChild(host);
+    positionToasts();
     requestAnimationFrame(() => host.classList.add("is-visible"));
     setTimeout(() => {
       host.classList.remove("is-visible");
-      setTimeout(() => host.remove(), 160);
-    }, options.duration || 2600);
+      setTimeout(() => {
+        host.remove();
+        positionToasts();
+      }, 160);
+    }, options.duration || 5200);
+  }
+
+  function positionToasts() {
+    [...document.querySelectorAll(".codexmod-toast")].reverse().forEach((toast, index) => {
+      toast.style.setProperty("--codexmod-toast-offset", `${18 + index * 54}px`);
+    });
   }
 
   function ensureCoreButton() {
@@ -218,7 +229,9 @@
 
     const list = settings.overlay.querySelector('[data-field="modList"]');
     list.replaceChildren();
-    const installed = await requestControl("/mods").then((result) => result.mods || []).catch(() => loadedMods);
+    const installed = await requestControl("/mods")
+      .then((result) => result.mods?.length ? result.mods : state.availableMods)
+      .catch(() => state.availableMods.length ? state.availableMods : loadedMods);
     const enabled = Array.isArray(config.enabledMods) ? new Set(config.enabledMods) : null;
 
     installed.forEach((modName) => {
@@ -276,13 +289,20 @@
   }
 
   async function openDevTools() {
+    const devtoolsWindow = window.open("about:blank", "_blank");
     const result = await requestControl("/devtools");
     if (!result.devtoolsUrl) {
+      devtoolsWindow?.close();
       notify("No DevTools target found", { tone: "warn", force: true });
       return;
     }
-    window.open(result.devtoolsUrl, "_blank");
-    notify("Opened DevTools");
+    if (devtoolsWindow) {
+      devtoolsWindow.location.href = result.devtoolsUrl;
+      notify("Opened DevTools");
+    } else {
+      await navigator.clipboard.writeText(result.devtoolsUrl);
+      notify("Popup blocked. Copied DevTools URL instead.", { tone: "warn", force: true });
+    }
   }
 
   function observe(selector, callback, options = {}) {
@@ -502,6 +522,7 @@
     uninstallPrevious();
     await domReady();
     state.payload = payload;
+    state.availableMods = (payload.availableMods || payload.mods || []).map((mod) => mod.name || mod);
     state.controlBaseUrl = payload.control?.port ? `http://127.0.0.1:${payload.control.port}` : "";
     injectStyle("codexmod-base-css", payload.baseCss || "");
     bindGlobalShortcut();

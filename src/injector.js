@@ -92,6 +92,7 @@ async function buildInjectionBundle(args) {
   const baseCss = await readText(`${runtimeDir}/codexmod.css`);
   const config = await readConfig();
   const modFiles = await listJsFiles(userModsDir);
+  const availableMods = modFiles.map((file) => file.split("/").pop());
   const enabledMods = Array.isArray(config.enabledMods) ? new Set(config.enabledMods) : null;
   const mods = await Promise.all(
     modFiles
@@ -109,6 +110,7 @@ async function buildInjectionBundle(args) {
     runtime,
     baseCss,
     mods,
+    availableMods,
     config,
     control: { port: args.controlPort },
     paths: { userModsDir, userConfigPath }
