@@ -289,20 +289,12 @@
   }
 
   async function openDevTools() {
-    const devtoolsWindow = window.open("about:blank", "_blank");
-    const result = await requestControl("/devtools");
+    const result = await requestControl("/open-devtools", { method: "POST" });
     if (!result.devtoolsUrl) {
-      devtoolsWindow?.close();
       notify("No DevTools target found", { tone: "warn", force: true });
       return;
     }
-    if (devtoolsWindow) {
-      devtoolsWindow.location.href = result.devtoolsUrl;
-      notify("Opened DevTools");
-    } else {
-      await navigator.clipboard.writeText(result.devtoolsUrl);
-      notify("Popup blocked. Copied DevTools URL instead.", { tone: "warn", force: true });
-    }
+    notify("Opening DevTools", { force: true });
   }
 
   function observe(selector, callback, options = {}) {
@@ -502,20 +494,36 @@
     if (window.CodexMod?.dispose) window.CodexMod.dispose();
   }
 
-  async function loadMod(mod) {
+  async function loadCompiledMod(mod, setup) {
     const api = createApi(mod.name.replace(/\.js$/, ""));
-    const moduleUrl = URL.createObjectURL(new Blob([`${mod.code}\n//# sourceURL=${mod.url}`], { type: "text/javascript" }));
-    try {
-      const imported = await import(moduleUrl);
-      const setup = imported.default || imported.setup;
-      if (typeof setup !== "function") throw new Error("Mod must export default function setup(api)");
-      const cleanup = await setup(api);
-      state.mods.set(mod.name, { ...mod, cleanup });
-      if (typeof cleanup === "function") state.disposers.push(cleanup);
-      log("info", `Loaded ${mod.name}`);
-    } finally {
-      URL.revokeObjectURL(moduleUrl);
+    const cleanup = await setup(api);
+    state.mods.set(mod.name, { ...mod, cleanup });
+    if (typeof cleanup === "function") state.disposers.push(cleanup);
+    log("info", `Loaded ${mod.name}`);
+  }
+
+  async function loadMod(mod) {
+    throw new Error(`${mod.name} was not compiled by the injector`);
+  }
+
+  function compileMod(mod) {
+    let code = mod.code.trim();
+    code = code.replace(/export\s+default\s+async\s+function\s+setup\s*\(/, "return async function setup(");
+    code = code.replace(/export\s+default\s+function\s+setup\s*\(/, "return function setup(");
+    code = code.replace(/export\s+default\s+async\s+function\s*\(/, "return async function(");
+    code = code.replace(/export\s+default\s+function\s*\(/, "return function(");
+    code = code.replace(/export\s+default\s+setup\s*;?/, "return setup;");
+    code = code.replace(/export\s+\{\s*setup\s+as\s+default\s*\}\s*;?/, "return setup;");
+    code = code.replace(/export\s+async\s+function\s+setup\s*\(/, "async function setup(");
+    code = code.replace(/export\s+function\s+setup\s*\(/, "function setup(");
+
+    if (!code.includes("return ")) {
+      code = `${code}\nreturn typeof setup === "function" ? setup : undefined;`;
     }
+
+    const setup = new Function(`${code}\n//# sourceURL=${mod.url}`)();
+    if (typeof setup !== "function") throw new Error("Mod must export default function setup(api)");
+    return setup;
   }
 
   async function install(payload) {
@@ -550,15 +558,17 @@
       }
     };
 
-    for (const mod of payload.mods || []) {
-      await loadMod(mod).catch((error) => {
-        log("warn", `Could not load ${mod.name}:`, error);
-        notify(`CodexMod could not load ${mod.name}`, { tone: "warn" });
-      });
-    }
-
-    notify(`CodexMod loaded ${state.mods.size} mod(s)`);
+    setTimeout(() => notify(`CodexMod loaded ${state.mods.size} mod(s)`), 120);
   }
 
-  window.CodexModRuntime = { version: state.version, install };
+  window.CodexModRuntime = {
+    version: state.version,
+    install,
+    loadCompiledMod(mod, setup) {
+      return loadCompiledMod(mod, setup).catch((error) => {
+        log("warn", `Could not load ${mod.name}:`, error);
+        notify(`CodexMod could not load ${mod.name}: ${error.message}`, { tone: "warn", duration: 9000, force: true });
+      });
+    }
+  };
 })();

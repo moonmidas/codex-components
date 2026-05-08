@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { watch } from "node:fs";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
+import { platform } from "node:os";
 import WebSocket from "ws";
 import {
   ensureUserDirs,
@@ -103,13 +105,17 @@ async function buildInjectionBundle(args) {
         code: await readFile(file, "utf8")
       }))
   );
+  const compiledMods = mods.map((mod) => ({
+    ...mod,
+    installerExpression: compileModInstaller(mod)
+  }));
 
   return `
 (() => {
   const payload = ${JSON.stringify({
     runtime,
     baseCss,
-    mods,
+    mods: compiledMods.map(({ code, installerExpression, ...mod }) => mod),
     availableMods,
     config,
     control: { port: args.controlPort },
@@ -117,7 +123,26 @@ async function buildInjectionBundle(args) {
   })};
   ${runtime}
   window.CodexModRuntime.install(payload);
+  ${compiledMods.map((mod) => `
+  window.CodexModRuntime.loadCompiledMod(${JSON.stringify({
+    name: mod.name,
+    url: mod.url
+  })}, ${mod.installerExpression});`).join("\n")}
 })();`;
+}
+
+function compileModInstaller(mod) {
+  let code = mod.code.trim();
+  code = code.replace(/export\s+default\s+async\s+function\s+setup\s*\(/, "async function setup(");
+  code = code.replace(/export\s+default\s+function\s+setup\s*\(/, "function setup(");
+  code = code.replace(/export\s+async\s+function\s+setup\s*\(/, "async function setup(");
+  code = code.replace(/export\s+function\s+setup\s*\(/, "function setup(");
+  code = code.replace(/export\s+default\s+setup\s*;?/g, "");
+  code = code.replace(/export\s+\{\s*setup\s+as\s+default\s*\}\s*;?/g, "");
+  if (!/\bfunction\s+setup\s*\(/.test(code) && !/\basync\s+function\s+setup\s*\(/.test(code)) {
+    throw new Error(`${mod.name} must export default function setup(api)`);
+  }
+  return `(function(){\n${code}\n; return setup;\n})()\n//# sourceURL=${mod.url}`;
 }
 
 async function injectTarget(args, target) {
@@ -176,6 +201,21 @@ async function readRequestJson(request) {
 }
 
 function startControlServer(args, injectedIds) {
+  async function getDevToolsUrl() {
+    const targets = await fetchJson(`http://127.0.0.1:${args.port}/json`);
+    const target = targets.find((item) => item.webSocketDebuggerUrl && looksLikeCodexTarget(item));
+    let devtoolsUrl = target?.devtoolsFrontendUrl || null;
+    if (devtoolsUrl?.startsWith("/")) devtoolsUrl = `http://127.0.0.1:${args.port}${devtoolsUrl}`;
+    return devtoolsUrl;
+  }
+
+  function openExternal(urlToOpen) {
+    const command = platform() === "darwin" ? "open" : platform() === "win32" ? "cmd" : "xdg-open";
+    const args = platform() === "win32" ? ["/c", "start", "", urlToOpen] : [urlToOpen];
+    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    child.unref();
+  }
+
   const server = createServer(async (request, response) => {
     try {
       if (request.method === "OPTIONS") {
@@ -200,11 +240,11 @@ function startControlServer(args, injectedIds) {
         const files = (await listJsFiles(userModsDir)).map((file) => file.split("/").pop());
         sendJson(response, 200, { ok: true, mods: files });
       } else if (url.pathname === "/devtools" && request.method === "GET") {
-        const targets = await fetchJson(`http://127.0.0.1:${args.port}/json`);
-        const target = targets.find((item) => item.webSocketDebuggerUrl && looksLikeCodexTarget(item));
-        const devtoolsUrl = target?.devtoolsFrontendUrl
-          ? `http://127.0.0.1:${args.port}${target.devtoolsFrontendUrl}`
-          : null;
+        const devtoolsUrl = await getDevToolsUrl();
+        sendJson(response, 200, { ok: Boolean(devtoolsUrl), devtoolsUrl });
+      } else if (url.pathname === "/open-devtools" && request.method === "POST") {
+        const devtoolsUrl = await getDevToolsUrl();
+        if (devtoolsUrl) openExternal(devtoolsUrl);
         sendJson(response, 200, { ok: Boolean(devtoolsUrl), devtoolsUrl });
       } else {
         sendJson(response, 404, { ok: false, error: "Not found" });
