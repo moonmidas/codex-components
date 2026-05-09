@@ -26,6 +26,8 @@ function createState(api) {
     enhancedLinks: new WeakSet(),
     disposers: [],
     observer: null,
+    scanQueued: false,
+    disposed: false,
     pageHandle: null,
     sectionHandle: null,
     pageRoot: null,
@@ -78,6 +80,7 @@ function rerenderAll(state) {
 }
 
 function disposeState(state) {
+  state.disposed = true;
   state.pageHandle?.unregister?.();
   state.sectionHandle?.unregister?.();
   while (state.disposers.length) {
@@ -90,9 +93,9 @@ function disposeState(state) {
 }
 
 function installRenderer(state) {
-  scanDocument(state);
-  const observer = new MutationObserver(() => scanDocument(state));
-  observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  scheduleScan(state);
+  const observer = new MutationObserver(() => scheduleScan(state));
+  observer.observe(document.documentElement, { childList: true, subtree: true });
   state.observer = observer;
   state.disposers.push(() => observer.disconnect());
   state.disposers.push(() => {
@@ -106,11 +109,14 @@ function installRenderer(state) {
 }
 
 function scanDocument(state) {
+  state.scanQueued = false;
   if (!state.settings.renderer) return;
   const blocks = [];
-  document.querySelectorAll("pre, code, [data-language], [class*='language-']").forEach((node) => {
+  const candidates = recentNodes(document.querySelectorAll("pre, code, [data-language], [class*='language-']"), 160);
+  candidates.forEach((node) => {
     if (shouldSkipNode(state, node)) return;
     const text = node.textContent || "";
+    if (text.length > 120000) return;
     const language = detectLanguage(node);
     if (isComponentLanguage(language)) {
       blocks.push({ node, language, raw: cleanRaw(text, language), hideSource: true });
@@ -126,9 +132,28 @@ function scanDocument(state) {
     blocks.push(...blocksFromText(state, node, text, true));
   });
   collectTextFenceBlocks(state, blocks);
-  blocks.forEach((block) => mountBlock(state, block));
+  blocks.slice(0, 24).forEach((block) => mountBlock(state, block));
   enhanceNativeTables(state);
   enhanceLinksAndMedia(state);
+}
+
+function scheduleScan(state) {
+  if (state.scanQueued) return;
+  state.scanQueued = true;
+  const run = () => {
+    if (state.disposed) return;
+    scanDocument(state);
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 900 });
+  } else {
+    window.setTimeout(run, 120);
+  }
+}
+
+function recentNodes(nodeList, limit) {
+  const nodes = Array.from(nodeList);
+  return nodes.slice(Math.max(0, nodes.length - limit));
 }
 
 function shouldSkipNode(state, node) {
@@ -138,10 +163,14 @@ function shouldSkipNode(state, node) {
 }
 
 function collectTextFenceBlocks(state, blocks) {
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const root = document.querySelector("main") || document.body;
+  if (!root || (root.textContent || "").length > 350000) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const seen = new WeakSet(blocks.map((block) => block.node));
+  let checked = 0;
   let textNode = walker.nextNode();
-  while (textNode) {
+  while (textNode && checked < 800) {
+    checked += 1;
     const text = textNode.textContent || "";
     if (text.includes("```codex-component") || text.includes("```codex-widget") || text.includes("```show_widget")) {
       const source = nearestRenderableSource(textNode);
