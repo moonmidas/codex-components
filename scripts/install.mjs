@@ -18,7 +18,7 @@ function main() {
   ensureCodexPlusPlusSource();
   installCodexPlusPlus();
   installComponentsTweak();
-  disableBennettSidebarActionGrid();
+  applyBennettDefaults();
   console.log("\nCodex++ + CodexMod Components installed.");
   console.log("Restart Codex++ and open Settings -> Tweaks -> CodexMod Components.");
 }
@@ -58,11 +58,13 @@ function installComponentsTweak() {
   console.log(`Installed CodexMod Components tweak -> ${target}`);
 }
 
-function disableBennettSidebarActionGrid() {
+function applyBennettDefaults() {
   const bennettIndex = join(tweaksDir, "co.bennett.ui-improvements", "index.js");
   if (existsSync(bennettIndex)) {
     const source = readFileSync(bennettIndex, "utf8");
-    const patched = source.replace('"sidebar-action-grid": true,', '"sidebar-action-grid": false,');
+    const patched = source
+      .replace('"sidebar-action-grid": true,', '"sidebar-action-grid": false,')
+      .replace('"sidebar-project-backgrounds": true,', '"sidebar-project-backgrounds": false,');
     if (patched !== source) writeFileSync(bennettIndex, patched);
   }
 
@@ -71,9 +73,10 @@ function disableBennettSidebarActionGrid() {
   const mainStorageFile = join(storageDir, "co.bennett.ui-improvements.json");
   const current = readJson(mainStorageFile);
   current["feature:sidebar-action-grid"] = false;
+  current["feature:sidebar-project-backgrounds"] = false;
   writeFileSync(mainStorageFile, `${JSON.stringify(current, null, 2)}\n`);
 
-  console.log("Disabled Bennett's Sidebar action grid default.");
+  console.log("Disabled Bennett's Sidebar action grid and project backgrounds defaults.");
 }
 
 function defaultCodexPlusPlusHome() {

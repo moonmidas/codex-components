@@ -2,7 +2,7 @@
 
 CodexMod Components is a Codex++ tweak that makes Codex answers easier to read when they contain structured output: dashboards, metric cards, polished tables, link cards, YouTube embeds, guided intake cards, and sandboxed HTML widgets.
 
-It is built on top of [Codex++](https://github.com/b-nnett/codex-plusplus). This repo is a bootstrapper: it installs Codex++, keeps the starter tweaks, installs the CodexMod Components tweak, and disables Bennett's **Sidebar action grid** default.
+It is built on top of [Codex++](https://github.com/b-nnett/codex-plusplus). This repo is a bootstrapper: it installs Codex++, keeps the starter tweaks, installs the CodexMod Components tweak, and disables Bennett's **Sidebar action grid** and **Sidebar project backgrounds** defaults.
 
 ## Install
 
@@ -25,7 +25,7 @@ The installer:
 2. Patches the local Codex app so it runs as Codex++.
 3. Installs the Codex++ starter tweaks.
 4. Installs `com.codexmod.components`.
-5. Disables Bennett's Sidebar action grid default.
+5. Disables Bennett's Sidebar action grid and Sidebar project backgrounds defaults.
 
 ## What It Adds
 
