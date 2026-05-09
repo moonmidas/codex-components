@@ -41,16 +41,24 @@ const DEFAULT_SETTINGS = Object.freeze({
   dashboards: true,
   intake: true,
   htmlWidgets: true,
-  mediaEmbeds: false,
+  mediaEmbeds: true,
   linkPreviews: true,
   tablePolish: true,
   autoPromptHelper: true,
   promptInjection: true,
+  videoPreviewMigration: 1,
 });
 
 function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    const settings = { ...DEFAULT_SETTINGS, ...stored };
+    if (stored.videoPreviewMigration !== 1) {
+      settings.mediaEmbeds = true;
+      settings.videoPreviewMigration = 1;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+    return settings;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
