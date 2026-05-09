@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${CODEXMOD_REPO:-moonmidas/codexmod-components}"
-REF="${CODEXMOD_REF:-main}"
-DEST="${CODEXMOD_SOURCE:-$HOME/.codexmod/components}"
+REPO="${CODEX_COMPONENTS_REPO:-moonmidas/codex-components}"
+REF="${CODEX_COMPONENTS_REF:-main}"
+DEST="${CODEX_COMPONENTS_SOURCE:-$HOME/.codex-components/source}"
 
 if ! command -v git >/dev/null 2>&1; then
-  echo "git is required to install CodexMod Components." >&2
+  echo "git is required to install Codex Components." >&2
   exit 1
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js 20+ is required to install CodexMod Components." >&2
+  echo "Node.js 20+ is required to install Codex Components." >&2
   exit 1
 fi
 

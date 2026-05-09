@@ -6,7 +6,7 @@ module.exports = {
     installStyles(state);
     installRenderer(state);
     registerSettings(state);
-    state.api.log.info("CodexMod Components started");
+    state.api.log.info("Codex Components started");
   },
 
   stop() {
@@ -133,7 +133,7 @@ function scanDocument(state) {
 
 function shouldSkipNode(state, node) {
   return state.mounted.has(node)
-    || node.closest?.("[data-codexmod-component-mount], .codexmod-components, .codexmod-settings")
+    || node.closest?.("[data-codexmod-component-mount], .codex-components, .codexmod-settings")
     || node.dataset?.codexmodComponentSource === "true";
 }
 
@@ -260,7 +260,7 @@ function mountBlock(state, block) {
   sourceNode.dataset.codexmodComponentSource = "true";
   if (block.hideSource) sourceNode.style.display = "none";
   const mount = document.createElement("div");
-  mount.className = "codexmod-components";
+  mount.className = "codex-components";
   mount.dataset.codexmodComponentMount = "true";
   sourceNode.after(mount);
 
@@ -455,7 +455,7 @@ function renderHtmlWidget(target, descriptor, raw, state) {
 function enhanceNativeTables(state) {
   if (!state.settings.tablePolish) return;
   document.querySelectorAll("table").forEach((table) => {
-    if (state.enhancedTables.has(table) || table.closest?.(".codexmod-components, .codexmod-settings")) return;
+    if (state.enhancedTables.has(table) || table.closest?.(".codex-components, .codexmod-settings")) return;
     table.classList.add("codexmod-native-table");
     const wrap = table.parentElement;
     if (wrap && !wrap.classList.contains("codexmod-native-table-wrap")) {
@@ -468,7 +468,7 @@ function enhanceNativeTables(state) {
 function enhanceLinksAndMedia(state) {
   if (!state.settings.mediaEmbeds && !state.settings.linkPreviews) return;
   document.querySelectorAll("a[href]").forEach((link) => {
-    if (state.enhancedLinks.has(link) || link.closest?.(".codexmod-components, .codexmod-settings, table")) return;
+    if (state.enhancedLinks.has(link) || link.closest?.(".codex-components, .codexmod-settings, table")) return;
     const href = link.href;
     const youtube = parseYouTubeUrl(href);
     if (youtube && state.settings.mediaEmbeds) {
@@ -537,12 +537,12 @@ function isSendButton(target) {
 
 function shouldInjectContract(text) {
   const value = String(text || "");
-  if (!value.trim() || value.includes("CodexMod Components prompt contract")) return false;
+  if (!value.trim() || value.includes("Codex Components prompt contract")) return false;
   return /\b(use|using|query|check|analy[sz]e|dashboard|table|graph|chart|metric|funnel|report|posthog|supabase|meta ads|gmail|drive|calendar|stripe|github|plugin|skill|mcp|tool|link|youtube|video)\b/i.test(value);
 }
 
 function componentPromptComment() {
-  return `<!-- CodexMod Components prompt contract:
+  return `<!-- Codex Components prompt contract:
 When this answer uses tools, plugins, skills, analytics, links, tables, or structured data, prefer concise visual components over prose-only output.
 For dashboards, emit a fenced JSON block with language codex-component and type "dashboard".
 Use sections: metric_strip, insight_grid, funnel, bar_chart, table, recommendations, action_chips.
@@ -614,7 +614,7 @@ function cleanLinkLabel(label, url) {
 
 function renderError(target, message, raw) {
   target.innerHTML = "";
-  target.append(el("section", { className: "codexmod-components codexmod-component codexmod-error" }, [
+  target.append(el("section", { className: "codex-components codexmod-component codexmod-error" }, [
     el("strong", {}, ["Could not render component"]),
     el("p", {}, [message]),
     el("details", {}, [el("summary", {}, ["View source"]), el("pre", {}, [raw])]),
@@ -673,7 +673,7 @@ function insertPrompt(text) {
 function registerSettings(state) {
   const page = {
     id: "main",
-    title: "CodexMod Components",
+    title: "Codex Components",
     description: "Claude-style dashboards, media cards, link previews, and polished tables.",
     iconSvg:
       '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
@@ -691,7 +691,7 @@ function registerSettings(state) {
 
   state.sectionHandle = state.api.settings.register({
     id: "com.codexmod.components:summary",
-    title: "CodexMod Components",
+    title: "Codex Components",
     description: "Open the Components page to configure renderers.",
     render(root) {
       root.innerHTML = "";
@@ -777,9 +777,9 @@ function promptContract(settings) {
 
 function installStyles(state) {
   const style = document.createElement("style");
-  style.id = "codexmod-components-style";
+  style.id = "codex-components-style";
   style.textContent = `
-    .codexmod-components {
+    .codex-components {
       --cm-bg: var(--color-background-primary, #ffffff);
       --cm-panel: var(--color-background-secondary, #f6f6f3);
       --cm-panel-2: var(--color-background-tertiary, #ecebe6);
@@ -796,7 +796,7 @@ function installStyles(state) {
       margin: 12px 0;
     }
     @media (prefers-color-scheme: dark) {
-      .codexmod-components {
+      .codex-components {
         --cm-bg: var(--color-background-primary, #171714);
         --cm-panel: var(--color-background-secondary, #242421);
         --cm-panel-2: var(--color-background-tertiary, #2d2d29);

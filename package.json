@@ -1,14 +1,14 @@
 {
-  "name": "codexmod-components",
+  "name": "codex-components",
   "version": "0.1.0",
-  "description": "Codex++ bootstrap plus the CodexMod Components tweak.",
+  "description": "Codex++ bootstrap plus the Codex Components tweak.",
   "type": "module",
   "bin": {
-    "codexmod-components": "./scripts/install.mjs"
+    "codex-components": "./scripts/install.mjs"
   },
   "scripts": {
     "install:local": "node ./scripts/install.mjs",
-    "check": "node --check ./scripts/install.mjs && node --check ./tweaks/codexmod-components/index.js"
+    "check": "node --check ./scripts/install.mjs && node --check ./tweaks/codex-components/index.js"
   },
   "engines": {
     "node": ">=20"

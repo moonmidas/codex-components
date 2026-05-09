@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codexPlusPlusRepo = "https://github.com/b-nnett/codex-plusplus.git";
-const sourceRoot = join(homedir(), ".codexmod", "codex-plusplus");
+const sourceRoot = join(homedir(), ".codex-components", "codex-plusplus");
 const codexPlusPlusHome = process.env.CODEX_PLUSPLUS_HOME || defaultCodexPlusPlusHome();
 const tweaksDir = join(codexPlusPlusHome, "tweaks");
 
@@ -19,8 +19,8 @@ function main() {
   installCodexPlusPlus();
   installComponentsTweak();
   applyBennettDefaults();
-  console.log("\nCodex++ + CodexMod Components installed.");
-  console.log("Restart Codex++ and open Settings -> Tweaks -> CodexMod Components.");
+  console.log("\nCodex++ + Codex Components installed.");
+  console.log("Restart Codex++ and open Settings -> Tweaks -> Codex Components.");
 }
 
 function requirePlatform() {
@@ -54,8 +54,8 @@ function installComponentsTweak() {
   const target = join(tweaksDir, "com.codexmod.components");
   mkdirSync(tweaksDir, { recursive: true });
   rmSync(target, { recursive: true, force: true });
-  cpSync(join(root, "tweaks", "codexmod-components"), target, { recursive: true });
-  console.log(`Installed CodexMod Components tweak -> ${target}`);
+  cpSync(join(root, "tweaks", "codex-components"), target, { recursive: true });
+  console.log(`Installed Codex Components tweak -> ${target}`);
 }
 
 function applyBennettDefaults() {
