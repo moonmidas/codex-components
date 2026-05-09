@@ -1,118 +1,83 @@
-# CodexMod
+# CodexMod Components
 
-CodexMod is a user-installable modding framework for the OpenAI Codex desktop app. It launches Codex with Chrome DevTools Protocol enabled, attaches to the renderer, and injects a small runtime that loads JavaScript mods from `~/.codexmod/mods/`.
+CodexMod Components is a Codex++ tweak that makes Codex answers easier to read when they contain structured output: dashboards, metric cards, polished tables, link cards, YouTube embeds, guided intake cards, and sandboxed HTML widgets.
 
-It does not unpack, patch, repackage, or modify `Codex.app`.
-
-Think of it as the unofficial extension system OpenAI never shipped.
-
-## Is Codex Electron-based?
-
-Yes for the installed macOS app this repository targets. The local app at `/Applications/Codex.app/Contents/` identifies as an Electron app: `Info.plist` includes `NSPrincipalClass = AtomApplication`, `ElectronAsarIntegrity`, and an Electron-style `Resources/app.asar` entry. Public docs and app packaging can change, so CodexMod treats this as a runtime fact to verify per release rather than a permanent API contract.
-
-## Architecture
-
-1. `bin/codexmod.js` launches the official Codex executable with `--remote-debugging-port`.
-2. `src/injector.js` polls `http://127.0.0.1:<port>/json`, finds Codex renderer targets, and attaches over CDP.
-3. The injector installs `runtime/codexmod-runtime.js` and `runtime/codexmod.css` through `Runtime.evaluate` and `Page.addScriptToEvaluateOnNewDocument`.
-4. The runtime creates `window.CodexMod`, binds `Cmd/Ctrl + K`, and loads every `.js` file in `~/.codexmod/mods/`.
-5. A tiny core shell provides settings, mod enablement, reload, and DevTools access even if user mods are disabled.
-6. Mods call the API to register commands, components, styles, DOM observers, and output rendering hooks.
-7. The injector keeps polling so new renderer targets receive the runtime after reloads or navigation.
+It is built on top of [Codex++](https://github.com/b-nnett/codex-plusplus). This repo is a bootstrapper: it installs Codex++, keeps the starter tweaks, installs the CodexMod Components tweak, and disables Bennett's **Sidebar action grid** default.
 
 ## Install
 
-```bash
-npm install
-npm run seed
-npm start
+Paste this into Codex and ask it to inspect and run it:
+
+```text
+Install this Codex++ tweak bootstrap for me:
+https://github.com/moonmidas/codexmod-components
 ```
 
-### macOS
-
-The default app path is:
-
-```bash
-/Applications/Codex.app/Contents/MacOS/Codex
-```
-
-Run:
+Or run directly on macOS:
 
 ```bash
-npm start
+curl -fsSL https://raw.githubusercontent.com/moonmidas/codexmod-components/main/install.sh | bash
 ```
 
-Custom path:
+The installer:
 
-```bash
-npm start -- --app /Applications/Codex.app/Contents/MacOS/Codex --port 9229
+1. Clones and builds `b-nnett/codex-plusplus`.
+2. Patches the local Codex app so it runs as Codex++.
+3. Installs the Codex++ starter tweaks.
+4. Installs `com.codexmod.components`.
+5. Disables Bennett's Sidebar action grid default.
+
+## What It Adds
+
+- `codex-component` dashboards for tool/plugin/skill output.
+- Theme-aware Claude Cowork-style metric cards, insight grids, funnels, bar charts, tables, recommendations, and action chips.
+- Normal Markdown table polish.
+- YouTube embeds and Open Graph-style link cards outside tables.
+- A Settings page under Tweaks where each renderer can be enabled or disabled.
+- Automatic prompt-contract injection for tool/plugin-like prompts, with an opt-out toggle.
+
+## Tweak Blocks
+
+CodexMod Components renders fenced JSON blocks:
+
+```codex-component
+{
+  "type": "dashboard",
+  "version": 1,
+  "title": "Example Dashboard",
+  "sections": [
+    {
+      "type": "metric_strip",
+      "items": [
+        { "label": "Visitors", "value": "1.2K", "delta": "last 7 days" }
+      ]
+    }
+  ]
+}
 ```
 
-### Windows
+Supported section types:
 
-Install Node.js 20 or newer, then run from this repo:
-
-```powershell
-npm install
-npm run seed
-npm start -- --app "$env:LOCALAPPDATA\Programs\Codex\Codex.exe" --port 9229
-```
-
-If Codex is already running with remote debugging:
-
-```bash
-npm start -- --no-launch --port 9229
-```
-
-## Usage
-
-1. Put mods in `~/.codexmod/mods/`.
-2. Launch Codex through CodexMod.
-3. Press `Cmd + K` on macOS or `Ctrl + K` on Windows/Linux.
-4. Search and run registered commands.
-
-Core controls:
-
-- Click the small `CM` button in the lower-right corner to open CodexMod settings.
-- Press `Cmd/Ctrl + Shift + ,` to open CodexMod settings.
-- Use `Open CodexMod Settings`, `Reload CodexMod`, or `Open Codex Renderer DevTools` from the command palette.
-
-CodexMod stores config at:
-
-```bash
-~/.codexmod/config.json
-```
-
-Seed the bundled command palette example:
-
-```bash
-npm run seed
-```
-
-## Files
-
-- `bin/codexmod.js`: CLI launcher.
-- `src/injector.js`: CDP target discovery and injection.
-- `src/seed-mods.js`: copies bundled mods into the user mod folder.
-- `runtime/codexmod-runtime.js`: browser-side framework.
-- `runtime/codexmod.css`: native-feeling base UI.
-- `runtime/mods/command-palette.js`: bundled Codex quick actions for the command palette.
-- `examples/hello-mod.js`: minimal third-party mod template.
+- `metric_strip`
+- `insight_grid`
+- `funnel`
+- `bar_chart`
+- `table`
+- `recommendations`
+- `action_chips`
 
 ## Development
 
-The injector starts a local control server on `127.0.0.1:9230`:
+```bash
+npm run check
+```
 
-- `GET /mods`: list installed user mods.
-- `GET /config`: read config.
-- `POST /config`: save config and reload.
-- `POST /reload`: reinject runtime and enabled mods.
-- `GET /devtools`: return the Codex renderer DevTools URL.
+The tweak source lives in:
 
-When `dev.liveReload` is enabled, changes in `~/.codexmod/mods/` and `runtime/` trigger reinjection automatically.
+```text
+tweaks/codexmod-components/
+```
 
 ## Safety
 
-CodexMod is intentionally external. It uses the same debugging interface Electron exposes for development and keeps all user mods outside the app bundle. If injection fails, Codex continues running normally.
-
-Use mods you trust. Mods execute inside the Codex renderer and can read or change visible UI state.
+Do not commit local Codex app bundles, runtime folders, logs, generated screenshots, tokens, or installer backups. The installer modifies a local Codex app copy through Codex++ and re-signs it on macOS.

@@ -1,0 +1,17 @@
+{
+  "id": "com.codexmod.components",
+  "name": "CodexMod Components",
+  "version": "0.1.0",
+  "githubRepo": "moonmidas/codexmod-components",
+  "description": "Claude-style rendered components, dashboards, and HTML widgets inside Codex chat.",
+  "author": {
+    "name": "moonmidas"
+  },
+  "tags": [
+    "components",
+    "artifacts",
+    "dashboards",
+    "ui"
+  ],
+  "scope": "renderer"
+}

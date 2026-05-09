@@ -1,19 +1,14 @@
 {
-  "name": "codexmod",
+  "name": "codexmod-components",
   "version": "0.1.0",
-  "description": "A safe CDP-based modding framework for the OpenAI Codex desktop app.",
+  "description": "Codex++ bootstrap plus the CodexMod Components tweak.",
   "type": "module",
   "bin": {
-    "codexmod": "./bin/codexmod.js"
+    "codexmod-components": "./scripts/install.mjs"
   },
   "scripts": {
-    "start": "node ./bin/codexmod.js",
-    "inject": "node ./src/injector.js",
-    "seed": "node ./src/seed-mods.js",
-    "check": "node --check ./bin/codexmod.js && node --check ./src/injector.js && node --check ./src/seed-mods.js && node --check ./runtime/codexmod-runtime.js && node --check ./runtime/mods/command-palette.js"
-  },
-  "dependencies": {
-    "ws": "^8.18.0"
+    "install:local": "node ./scripts/install.mjs",
+    "check": "node --check ./scripts/install.mjs && node --check ./tweaks/codexmod-components/index.js"
   },
   "engines": {
     "node": ">=20"
