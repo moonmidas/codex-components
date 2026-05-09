@@ -28,6 +28,7 @@ function createState(api) {
     observer: null,
     scanQueued: false,
     disposed: false,
+    widgetObserver: null,
     pageHandle: null,
     sectionHandle: null,
     pageRoot: null,
@@ -106,6 +107,7 @@ function installRenderer(state) {
   observer.observe(document.documentElement, { childList: true, subtree: true });
   state.observer = observer;
   state.disposers.push(() => observer.disconnect());
+  installWidgetObserver(state);
   state.disposers.push(() => {
     document.querySelectorAll("[data-codexmod-component-mount]").forEach((node) => node.remove());
     document.querySelectorAll("[data-codexmod-component-source='true']").forEach((node) => {
@@ -202,6 +204,7 @@ function shouldHideSource(source) {
   return text.startsWith("```codex-component")
     || text.startsWith("```codex-widget")
     || text.startsWith("```show_widget")
+    || text.startsWith("```show-widget")
     || isComponentLanguage(detectLanguage(source));
 }
 
@@ -244,7 +247,7 @@ function detectLanguage(node) {
 }
 
 function isComponentLanguage(language) {
-  return ["codex-component", "codex-widget", "show_widget"].includes(String(language || "").trim());
+  return ["codex-component", "codex-widget", "show_widget", "show-widget"].includes(String(language || "").trim());
 }
 
 function isCandidateJsonLanguage(language) {
@@ -257,7 +260,7 @@ function looksLikeComponentJson(raw) {
     return descriptor
       && typeof descriptor === "object"
       && !Array.isArray(descriptor)
-      && ["dashboard", "intake", "html_widget"].includes(descriptor.type)
+      && (["dashboard", "intake", "html_widget", "show_widget"].includes(descriptor.type) || typeof descriptor.widget_code === "string")
       && (descriptor.version === undefined || typeof descriptor.version === "number");
   } catch {
     return false;
@@ -274,10 +277,12 @@ function normalizeDescriptor(raw, language) {
   if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) {
     return { ok: false, error: "Component descriptor must be an object." };
   }
-  if (!descriptor.version && (language === "codex-widget" || language === "show_widget")) {
+  if (!descriptor.version && (language === "codex-widget" || language === "show_widget" || language === "show-widget" || descriptor.widget_code)) {
     descriptor.version = 1;
   }
-  if (!descriptor.type && (language === "codex-widget" || language === "show_widget")) {
+  if (!descriptor.type && (language === "show_widget" || language === "show-widget" || descriptor.widget_code)) {
+    descriptor.type = "show_widget";
+  } else if (!descriptor.type && language === "codex-widget") {
     descriptor.type = "html_widget";
   }
   if (typeof descriptor.type !== "string" || !descriptor.type.trim()) {
@@ -311,7 +316,8 @@ function mountBlock(state, block) {
     if (descriptor.type === "dashboard" && state.settings.dashboards) renderDashboard(mount, descriptor, block.raw, state);
     else if (descriptor.type === "intake" && state.settings.intake) renderIntake(mount, descriptor, block.raw, state);
     else if (descriptor.type === "html_widget" && state.settings.htmlWidgets) renderHtmlWidget(mount, descriptor, block.raw, state);
-    else if (["dashboard", "intake", "html_widget"].includes(descriptor.type)) {
+    else if (descriptor.type === "show_widget" && state.settings.htmlWidgets) renderShowWidget(mount, descriptor, block.raw, state);
+    else if (["dashboard", "intake", "html_widget", "show_widget"].includes(descriptor.type)) {
       sourceNode.style.display = "";
       mount.remove();
     }
@@ -489,6 +495,123 @@ function renderHtmlWidget(target, descriptor, raw, state) {
   state.disposers.push(() => window.removeEventListener("message", onMessage));
 }
 
+function renderShowWidget(target, descriptor, raw, state) {
+  target.innerHTML = "";
+  const shell = el("section", { className: "codexmod-component codexmod-show-widget" });
+  const header = el("header", { className: "codexmod-component-header" }, [
+    el("div", {}, [
+      el("h3", { className: "codexmod-component-title" }, [humanizeTitle(descriptor.title || "widget")]),
+      el("p", { className: "codexmod-component-subtitle" }, ["Live widget"]),
+    ]),
+    toolbar(descriptor, raw, state),
+  ]);
+  const body = el("div", { className: "codexmod-component-body codexmod-show-widget-body" }, [
+    el("div", { className: "codexmod-widget-loading" }, loadingMessages(descriptor).map((message) => el("span", {}, [message]))),
+  ]);
+  shell.append(header, body);
+  target.append(shell);
+  observeLazyWidget(state, body, () => mountShowWidgetFrame(body, descriptor, state));
+}
+
+function loadingMessages(descriptor) {
+  const messages = Array.isArray(descriptor.loading_messages) ? descriptor.loading_messages : [];
+  return messages.slice(0, 4).filter(Boolean).length ? messages.slice(0, 4).filter(Boolean) : ["Rendering widget..."];
+}
+
+function humanizeTitle(title) {
+  return String(title || "Widget").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function observeLazyWidget(state, node, render) {
+  if (!state.widgetObserver) {
+    state.widgetObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const renderWidget = entry.target.__codexmodRenderWidget;
+        delete entry.target.__codexmodRenderWidget;
+        state.widgetObserver.unobserve(entry.target);
+        renderWidget?.();
+      }
+    }, { rootMargin: "320px 0px" });
+    state.disposers.push(() => state.widgetObserver?.disconnect());
+  }
+  node.__codexmodRenderWidget = render;
+  state.widgetObserver.observe(node);
+}
+
+function mountShowWidgetFrame(body, descriptor, state) {
+  body.innerHTML = "";
+  const frame = document.createElement("iframe");
+  frame.className = "codexmod-widget-frame codexmod-show-widget-frame";
+  frame.setAttribute("sandbox", "allow-scripts");
+  frame.srcdoc = buildWidgetDocument(descriptor.widget_code || descriptor.html || descriptor.content || "");
+  frame.style.height = `${Number(descriptor.height) || 240}px`;
+  body.append(frame);
+  const onMessage = (event) => {
+    if (event.source !== frame.contentWindow) return;
+    const data = event.data || {};
+    if (data.method === "ui/notifications/size-changed" && data.params?.height) {
+      frame.style.height = `${Math.max(80, Math.ceil(Number(data.params.height)))}px`;
+    } else if (data.method === "codex/send-prompt" && data.params?.text) {
+      insertPrompt(String(data.params.text));
+    }
+  };
+  window.addEventListener("message", onMessage);
+  state.disposers.push(() => window.removeEventListener("message", onMessage));
+}
+
+function buildWidgetDocument(widgetCode) {
+  const code = sanitizeWidgetCode(widgetCode);
+  const tokens = widgetTokenStyle();
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>${tokens}
+html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary);font:inherit;}
+*{box-sizing:border-box}
+a{color:inherit}
+</style></head><body>${code}<script>
+(() => {
+  window.sendPrompt = (text) => parent.postMessage({ method: "codex/send-prompt", params: { text: String(text || "") } }, "*");
+  const notifySize = () => parent.postMessage({ method: "ui/notifications/size-changed", params: { height: Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight || 0) } }, "*");
+  new ResizeObserver(notifySize).observe(document.documentElement);
+  window.addEventListener("load", notifySize);
+  requestAnimationFrame(notifySize);
+})();
+</script></body></html>`;
+}
+
+function sanitizeWidgetCode(widgetCode) {
+  return String(widgetCode || "")
+    .replace(/<script\b([^>]*)\bsrc=(["'])(?!https:\/\/cdnjs\.cloudflare\.com\/)[\s\S]*?<\/script>/gi, "")
+    .replace(/\blocalStorage\b/g, "undefined");
+}
+
+function widgetTokenStyle() {
+  const computed = getComputedStyle(document.documentElement);
+  const names = [
+    "--color-background-primary",
+    "--color-background-secondary",
+    "--color-background-tertiary",
+    "--color-text-primary",
+    "--color-text-secondary",
+    "--color-text-tertiary",
+    "--color-border-tertiary",
+    "--border-radius-md",
+  ];
+  return `:root{${names.map((name) => `${name}:${computed.getPropertyValue(name).trim() || tokenFallback(name)};`).join("")}}`;
+}
+
+function tokenFallback(name) {
+  return {
+    "--color-background-primary": "transparent",
+    "--color-background-secondary": "rgba(127,127,127,.08)",
+    "--color-background-tertiary": "rgba(127,127,127,.12)",
+    "--color-text-primary": "#f1efe8",
+    "--color-text-secondary": "#b4b2a9",
+    "--color-text-tertiary": "#888780",
+    "--color-border-tertiary": "rgba(241,239,232,.16)",
+    "--border-radius-md": "10px",
+  }[name] || "initial";
+}
+
 function enhanceNativeTables(state) {
   if (!state.settings.tablePolish) return;
   document.querySelectorAll("table").forEach((table) => {
@@ -604,6 +727,7 @@ function componentPromptComment() {
   return `<!-- Codex Components prompt contract:
 When this answer uses tools, plugins, skills, analytics, links, tables, or structured data, prefer concise visual components over prose-only output.
 For dashboards, emit a fenced JSON block with language codex-component and type "dashboard".
+For custom HTML/SVG visuals or interactive mini-tools, emit language show_widget with title, widget_code, and loading_messages.
 Use sections: metric_strip, insight_grid, funnel, bar_chart, table, recommendations, action_chips.
 Keep labels short, include one-line interpretation, and use semantic signal colors only.
 Leave YouTube/video URLs and normal URLs as plain links outside tables so Codex Components can render embeds/link cards.
@@ -851,6 +975,7 @@ function promptContract(settings) {
     "When tool results contain analytics, funnel, campaign, revenue, retention, table, or comparison data, prefer a codex-component dashboard instead of prose-only output.",
     "Use a fenced JSON block with language codex-component.",
     "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, table, recommendations, action_chips.",
+    "For custom HTML/SVG visuals or interactive mini-tools, use a fenced show_widget JSON block with title, widget_code, and loading_messages.",
     "Use concise labels, short interpretations, and color intent: blue neutral, teal good, amber warning, red problem.",
     "For video URLs, leave the URL as a normal link; Codex Components will embed it outside tables.",
     "For links with useful context, leave the URL as a normal link; Codex Components will show an Open Graph-style card outside tables.",
