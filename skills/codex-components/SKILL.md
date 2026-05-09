@@ -48,6 +48,14 @@ Use a fenced `show_widget` JSON block for custom HTML/SVG, interactive mini-tool
 - In `show_widget`, use inline CSS or a local `<style>` block and host CSS variables.
 - In `show_widget`, keep backgrounds transparent unless a surface is truly needed.
 - In `show_widget`, call `sendPrompt(text)` from buttons when the widget should continue the chat.
+- In `show_widget`, call `openLink(url)` instead of direct `window.open`.
+- In `show_widget`, load external scripts only from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, or `unpkg.com`.
+- In `show_widget`, do not use `localStorage`, `sessionStorage`, `position: fixed`, full-page white backgrounds, gradients, heavy shadows, or browser-default fonts.
+- For HTML widgets, include an `sr-only` heading when the visual has no visible heading.
+- For SVG widgets, include `role="img"`, `<title>`, and `<desc>`.
+- Prefer 12px and 14px text inside dense widgets; use font weights 400 or 500 unless emphasis truly needs more.
+- Keep scripts last so the visual can stream before behavior initializes.
+- Useful variables include `--color-background-primary`, `--color-background-secondary`, `--color-background-tertiary`, `--color-text-primary`, `--color-text-secondary`, `--color-text-tertiary`, `--color-border-tertiary`, `--font-sans`, `--font-serif`, `--font-mono`, `--border-radius-md`, `--border-radius-lg`, and aliases `--p`, `--s`, `--t`, `--bg2`, `--b`.
 - Use semantic color intent in text only: blue neutral, teal good, amber warning, red problem.
 - Do not put links inside tables when they should become previews.
 - Leave YouTube/video URLs as normal Markdown links outside tables so the renderer can embed them.

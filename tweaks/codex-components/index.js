@@ -554,6 +554,8 @@ function mountShowWidgetFrame(body, descriptor, state) {
       frame.style.height = `${Math.max(80, Math.ceil(Number(data.params.height)))}px`;
     } else if (data.method === "codex/send-prompt" && data.params?.text) {
       insertPrompt(String(data.params.text));
+    } else if (data.method === "codex/open-link" && data.params?.url) {
+      window.open(String(data.params.url), "_blank", "noopener,noreferrer");
     }
   };
   window.addEventListener("message", onMessage);
@@ -563,25 +565,30 @@ function mountShowWidgetFrame(body, descriptor, state) {
 function buildWidgetDocument(widgetCode) {
   const code = sanitizeWidgetCode(widgetCode);
   const tokens = widgetTokenStyle();
+  const svgMode = code.trimStart().toLowerCase().startsWith("<svg");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>${tokens}
 html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary);font:inherit;}
 *{box-sizing:border-box}
 a{color:inherit}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 </style></head><body>${code}<script>
 (() => {
   window.sendPrompt = (text) => parent.postMessage({ method: "codex/send-prompt", params: { text: String(text || "") } }, "*");
+  window.openLink = (url) => parent.postMessage({ method: "codex/open-link", params: { url: String(url || "") } }, "*");
   const notifySize = () => parent.postMessage({ method: "ui/notifications/size-changed", params: { height: Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight || 0) } }, "*");
   new ResizeObserver(notifySize).observe(document.documentElement);
   window.addEventListener("load", notifySize);
   requestAnimationFrame(notifySize);
+  ${svgMode ? "document.body.style.display='inline-block';" : ""}
 })();
 </script></body></html>`;
 }
 
 function sanitizeWidgetCode(widgetCode) {
   return String(widgetCode || "")
-    .replace(/<script\b([^>]*)\bsrc=(["'])(?!https:\/\/cdnjs\.cloudflare\.com\/)[\s\S]*?<\/script>/gi, "")
-    .replace(/\blocalStorage\b/g, "undefined");
+    .replace(/<script\b([^>]*)\bsrc=(["'])(?!https:\/\/(?:cdnjs\.cloudflare\.com|esm\.sh|cdn\.jsdelivr\.net|unpkg\.com)\/)[\s\S]*?<\/script>/gi, "")
+    .replace(/\blocalStorage\b/g, "undefined")
+    .replace(/\bsessionStorage\b/g, "undefined");
 }
 
 function widgetTokenStyle() {
@@ -590,13 +597,32 @@ function widgetTokenStyle() {
     "--color-background-primary",
     "--color-background-secondary",
     "--color-background-tertiary",
+    "--color-background-info",
+    "--color-background-danger",
+    "--color-background-success",
+    "--color-background-warning",
     "--color-text-primary",
     "--color-text-secondary",
     "--color-text-tertiary",
+    "--color-text-info",
+    "--color-text-danger",
+    "--color-text-success",
+    "--color-text-warning",
+    "--color-border-primary",
+    "--color-border-secondary",
     "--color-border-tertiary",
+    "--color-border-info",
+    "--color-border-danger",
+    "--color-border-success",
+    "--color-border-warning",
+    "--font-sans",
+    "--font-serif",
+    "--font-mono",
     "--border-radius-md",
+    "--border-radius-lg",
+    "--border-radius-xl",
   ];
-  return `:root{${names.map((name) => `${name}:${computed.getPropertyValue(name).trim() || tokenFallback(name)};`).join("")}}`;
+  return `:root{${names.map((name) => `${name}:${computed.getPropertyValue(name).trim() || tokenFallback(name)};`).join("")}${tokenAliases()}}`;
 }
 
 function tokenFallback(name) {
@@ -604,12 +630,41 @@ function tokenFallback(name) {
     "--color-background-primary": "transparent",
     "--color-background-secondary": "rgba(127,127,127,.08)",
     "--color-background-tertiary": "rgba(127,127,127,.12)",
+    "--color-background-info": "rgba(133,183,235,.12)",
+    "--color-background-danger": "rgba(240,149,149,.12)",
+    "--color-background-success": "rgba(93,202,165,.12)",
+    "--color-background-warning": "rgba(250,199,117,.12)",
     "--color-text-primary": "#f1efe8",
     "--color-text-secondary": "#b4b2a9",
     "--color-text-tertiary": "#888780",
+    "--color-text-info": "#85b7eb",
+    "--color-text-danger": "#f09595",
+    "--color-text-success": "#5dcaa5",
+    "--color-text-warning": "#fac775",
+    "--color-border-primary": "rgba(241,239,232,.4)",
+    "--color-border-secondary": "rgba(241,239,232,.3)",
     "--color-border-tertiary": "rgba(241,239,232,.16)",
+    "--color-border-info": "rgba(133,183,235,.4)",
+    "--color-border-danger": "rgba(240,149,149,.4)",
+    "--color-border-success": "rgba(93,202,165,.4)",
+    "--color-border-warning": "rgba(250,199,117,.4)",
+    "--font-sans": "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    "--font-serif": "ui-serif, Georgia, serif",
+    "--font-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     "--border-radius-md": "10px",
+    "--border-radius-lg": "12px",
+    "--border-radius-xl": "16px",
   }[name] || "initial";
+}
+
+function tokenAliases() {
+  return [
+    "--p:var(--color-text-primary);",
+    "--s:var(--color-text-secondary);",
+    "--t:var(--color-text-tertiary);",
+    "--bg2:var(--color-background-secondary);",
+    "--b:var(--color-border-tertiary);",
+  ].join("");
 }
 
 function enhanceNativeTables(state) {
