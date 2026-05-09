@@ -18,6 +18,7 @@ function main() {
   ensureCodexPlusPlusSource();
   installCodexPlusPlus();
   installComponentsTweak();
+  installComponentsSkill();
   applyBennettDefaults();
   console.log("\nCodex++ + Codex Components installed.");
   console.log("Restart Codex++ and open Settings -> Tweaks -> Codex Components.");
@@ -56,6 +57,15 @@ function installComponentsTweak() {
   rmSync(target, { recursive: true, force: true });
   cpSync(join(root, "tweaks", "codex-components"), target, { recursive: true });
   console.log(`Installed Codex Components tweak -> ${target}`);
+}
+
+function installComponentsSkill() {
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  const target = join(codexHome, "skills", "codex-components");
+  mkdirSync(dirname(target), { recursive: true });
+  rmSync(target, { recursive: true, force: true });
+  cpSync(join(root, "skills", "codex-components"), target, { recursive: true });
+  console.log(`Installed Codex Components skill -> ${target}`);
 }
 
 function applyBennettDefaults() {

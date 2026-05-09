@@ -25,7 +25,8 @@ The installer:
 2. Patches the local Codex app so it runs as Codex++.
 3. Installs the Codex++ starter tweaks.
 4. Installs the Codex Components tweak.
-5. Disables Bennett's Sidebar action grid and Sidebar project backgrounds defaults.
+5. Installs the Codex Components skill so agents can emit components without manual prompting.
+6. Disables Bennett's Sidebar action grid and Sidebar project backgrounds defaults.
 
 ## What It Adds
 
@@ -35,6 +36,7 @@ The installer:
 - YouTube embeds and Open Graph-style link cards outside tables.
 - A Settings page under Tweaks where each renderer can be enabled or disabled.
 - Automatic prompt-contract injection for tool/plugin-like prompts, with an opt-out toggle.
+- A `codex-components` skill that teaches Codex how to create component dashboards, intake cards, embeds, and clean tables.
 
 ## Tweak Blocks
 

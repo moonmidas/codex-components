@@ -487,16 +487,20 @@ function installPromptInjection(state) {
   const handler = (event) => {
     if (!state.settings.promptInjection || !state.settings.autoPromptHelper) return;
     const target = event.target;
+    if (target?.closest?.(".codexmod-settings, [data-codexmod-component-mount], .codex-components")) return;
     const shouldSend =
       event.type === "click"
         ? isSendButton(target)
-        : (event.key === "Enter" && (event.metaKey || event.ctrlKey || !event.shiftKey));
+        : isComposerSubmitKey(event);
     if (!shouldSend) return;
     const composer = findComposer(target);
     if (!composer) return;
     const text = readComposer(composer);
     if (!shouldInjectContract(text)) return;
     writeComposer(composer, `${text.trim()}\n\n${componentPromptComment()}`);
+    window.setTimeout(() => {
+      if (readComposer(composer).includes("Codex Components prompt contract")) writeComposer(composer, text);
+    }, 350);
   };
   document.addEventListener("keydown", handler, true);
   document.addEventListener("click", handler, true);
@@ -509,8 +513,8 @@ function installPromptInjection(state) {
 function findComposer(target) {
   const scoped = target?.closest?.("form, [role='form'], footer, [data-testid*='composer' i], [class*='composer' i]");
   return scoped?.querySelector?.("textarea, [contenteditable='true']")
-    || document.activeElement?.matches?.("textarea, [contenteditable='true']") && document.activeElement
-    || Array.from(document.querySelectorAll("textarea, [contenteditable='true']")).find((node) => isVisible(node));
+    || (isComposerElement(document.activeElement) && document.activeElement)
+    || Array.from(document.querySelectorAll("textarea, [contenteditable='true']")).find((node) => isComposerElement(node) && isVisible(node));
 }
 
 function readComposer(composer) {
@@ -528,15 +532,33 @@ function isVisible(node) {
   return Boolean(rect && rect.width > 20 && rect.height > 10);
 }
 
+function isComposerElement(node) {
+  return Boolean(node?.matches?.("textarea, [contenteditable='true']")
+    && !node.closest?.(".codexmod-settings, [data-codexmod-component-mount], .codex-components")
+    && isVisible(node));
+}
+
+function isComposerSubmitKey(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return false;
+  return isComposerElement(event.target) && (event.metaKey || event.ctrlKey);
+}
+
 function isSendButton(target) {
   const buttonNode = target?.closest?.("button");
   if (!buttonNode) return false;
   const label = `${buttonNode.getAttribute("aria-label") || ""} ${buttonNode.title || ""} ${buttonNode.textContent || ""}`.toLowerCase();
-  return /send|submit|enviar|arrow|↑/.test(label) || buttonNode.querySelector("svg");
+  if (!/(send|submit|enviar|enviar mensaje|send message|arrow up|↑)/.test(label)) return false;
+  const rect = buttonNode.getBoundingClientRect?.();
+  const nearBottom = rect ? rect.bottom > window.innerHeight * 0.58 : true;
+  return nearBottom && Boolean(findComposer(buttonNode));
+}
+
+function stripPromptContractFromText(text) {
+  return String(text || "").replace(/\n?\s*<!-- Codex Components prompt contract:[\s\S]*?-->\s*/g, "").trimEnd();
 }
 
 function shouldInjectContract(text) {
-  const value = String(text || "");
+  const value = stripPromptContractFromText(text);
   if (!value.trim() || value.includes("Codex Components prompt contract")) return false;
   return /\b(use|using|query|check|analy[sz]e|dashboard|table|graph|chart|metric|funnel|report|posthog|supabase|meta ads|gmail|drive|calendar|stripe|github|plugin|skill|mcp|tool|link|youtube|video)\b/i.test(value);
 }
@@ -922,15 +944,24 @@ function installStyles(state) {
       max-width: 680px;
       margin: 10px 0 14px;
       padding: 11px 12px;
-      border: 1px solid rgba(241,239,232,.14);
+      border: 1px solid var(--color-border-tertiary, rgba(44,44,42,.16));
       border-radius: 12px;
-      background: var(--color-background-primary, #f6f6f3);
+      background: var(--color-background-secondary, #f6f6f3);
       color: var(--color-text-primary, #2c2c2a);
       font: 13px/1.35 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    .codexmod-link-card strong { display:block; font-weight:600; }
+    .codexmod-link-card strong {
+      display:block;
+      font-weight:650;
+      color: var(--color-text-primary, #2c2c2a);
+    }
     .codexmod-link-card span,
-    .codexmod-link-card a { color:var(--color-text-secondary, #5f5e5a); font-size:12px; text-decoration:none; }
+    .codexmod-link-card a {
+      color:var(--color-text-secondary, #5f5e5a);
+      font-size:12px;
+      text-decoration:none;
+      opacity: .98;
+    }
     .codexmod-link-favicon {
       display:grid;
       place-items:center;
@@ -1053,7 +1084,14 @@ function installStyles(state) {
     }
     @media (prefers-color-scheme: dark) {
       .codexmod-native-table-wrap,
-      .codexmod-link-card { background: var(--color-background-primary, #242421) !important; }
+      .codexmod-link-card {
+        background: var(--color-background-secondary, #242421) !important;
+        border-color: var(--color-border-tertiary, rgba(241,239,232,.18)) !important;
+        color: var(--color-text-primary, #f1efe8) !important;
+      }
+      .codexmod-link-card strong { color: var(--color-text-primary, #f1efe8) !important; }
+      .codexmod-link-card span,
+      .codexmod-link-card a { color: var(--color-text-secondary, #d8d6ce) !important; }
       table.codexmod-native-table { color: var(--color-text-primary, #f1efe8) !important; }
       table.codexmod-native-table th {
         background: var(--color-background-secondary, #1b1b18) !important;
