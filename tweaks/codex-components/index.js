@@ -635,31 +635,51 @@ function isPreviewableHttpUrl(href) {
 
 function renderYouTubeEmbed(videoId, href) {
   const safeId = encodeURIComponent(videoId);
-  const card = el("section", { className: "codexmod-link-card codexmod-video-card" }, [
-    el("div", { className: "codexmod-link-favicon codexmod-video-badge" }, ["▶"]),
-    el("div", {}, [
+  const card = el("section", { className: "codexmod-link-card codexmod-video-card" });
+  renderYouTubePreview(card, safeId, href);
+  return card;
+}
+
+function renderYouTubePreview(card, safeId, href) {
+  card.classList.remove("codexmod-video-card-loaded");
+  card.innerHTML = "";
+  card.append(
+    el("button", { type: "button", className: "codexmod-video-thumb", onclick: () => loadYouTubeFrame(card, safeId, href) }, [
+      el("img", {
+        src: `https://i.ytimg.com/vi/${safeId}/hqdefault.jpg`,
+        alt: "YouTube video thumbnail",
+        loading: "lazy",
+      }),
+      el("span", { className: "codexmod-video-play", "aria-hidden": "true" }, ["▶"]),
+    ]),
+    el("div", { className: "codexmod-video-meta" }, [
       el("strong", {}, ["YouTube video"]),
       el("span", {}, [new URL(href).hostname.replace(/^www\./, "")]),
     ]),
     el("div", { className: "codexmod-video-actions" }, [
-      button("Load video", () => loadYouTubeFrame(card, safeId)),
+      button("Play", () => loadYouTubeFrame(card, safeId, href)),
       el("a", { href, target: "_blank", rel: "noreferrer" }, ["Open"]),
     ]),
-  ]);
-  return card;
+  );
 }
 
-function loadYouTubeFrame(card, safeId) {
+function loadYouTubeFrame(card, safeId, href) {
   card.classList.add("codexmod-video-card-loaded");
   card.innerHTML = "";
-  card.append(el("iframe", {
-    src: `https://www.youtube-nocookie.com/embed/${safeId}`,
-    title: "YouTube video",
-    loading: "lazy",
-    referrerpolicy: "strict-origin-when-cross-origin",
-    allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
-    allowfullscreen: "true",
-  }));
+  card.append(
+    el("div", { className: "codexmod-video-framebar" }, [
+      button("Hide video", () => renderYouTubePreview(card, safeId, href)),
+      el("a", { href, target: "_blank", rel: "noreferrer" }, ["Open on YouTube"]),
+    ]),
+    el("iframe", {
+      src: `https://www.youtube-nocookie.com/embed/${safeId}?autoplay=1`,
+      title: "YouTube video",
+      loading: "lazy",
+      referrerpolicy: "strict-origin-when-cross-origin",
+      allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+      allowfullscreen: "true",
+    }),
+  );
 }
 
 function renderLinkPreview(href, label) {
@@ -1020,13 +1040,56 @@ function installStyles(state) {
     }
     .codexmod-video-card {
       display: flex;
+      align-items: stretch;
       max-width: 720px;
+      padding: 0;
+      overflow: hidden;
+    }
+    .codexmod-video-thumb {
+      position: relative;
+      display: block;
+      width: 172px;
+      min-height: 96px;
+      flex: 0 0 172px;
+      padding: 0;
+      border: 0;
+      background: #111;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .codexmod-video-thumb img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .codexmod-video-play {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 32px;
+      border-radius: 9px;
+      background: rgba(255,0,0,.9);
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      box-shadow: 0 6px 18px rgba(0,0,0,.28);
+    }
+    .codexmod-video-meta {
+      min-width: 0;
+      align-self: center;
+      padding: 12px;
     }
     .codexmod-video-actions {
       display:flex;
       align-items:center;
       gap: 8px;
       margin-left: auto;
+      padding: 12px;
       flex: 0 0 auto;
     }
     .codexmod-video-actions button {
@@ -1039,14 +1102,32 @@ function installStyles(state) {
       font-size: 12px;
       cursor: pointer;
     }
-    .codexmod-video-badge {
-      color: #f09595;
-    }
     .codexmod-video-card-loaded {
       display: block;
       padding: 0;
       overflow: hidden;
       background: #111;
+    }
+    .codexmod-video-framebar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: var(--color-background-secondary, #242421);
+      border-bottom: 1px solid var(--color-border-tertiary, rgba(241,239,232,.16));
+    }
+    .codexmod-video-framebar button,
+    .codexmod-video-framebar a {
+      border: 1px solid var(--color-border-tertiary, rgba(241,239,232,.16));
+      border-radius: 8px;
+      background: var(--color-background-primary, #171714);
+      color: var(--color-text-primary, #f1efe8);
+      padding: 5px 8px;
+      font: inherit;
+      font-size: 12px;
+      text-decoration: none;
+      cursor: pointer;
     }
     .codexmod-video-card-loaded iframe {
       display: block;
@@ -1175,6 +1256,9 @@ function installStyles(state) {
     @media (max-width: 720px) {
       .codexmod-component-header { flex-direction: column; }
       .codexmod-bar-row { grid-template-columns: 1fr; }
+      .codexmod-video-card { flex-direction: column; }
+      .codexmod-video-thumb { width: 100%; flex-basis: auto; aspect-ratio: 16 / 9; }
+      .codexmod-video-actions { margin-left: 0; padding-top: 0; }
     }
   `;
   document.head.appendChild(style);
