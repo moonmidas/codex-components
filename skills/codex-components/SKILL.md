@@ -31,6 +31,19 @@ Use a fenced `show_widget` JSON block for custom HTML/SVG, interactive mini-tool
 }
 ```
 
+## Show Widget Types
+
+Codex Components can create the same six broad in-chat widget families:
+
+- `diagrams`: flowcharts, architecture maps, state machines, org charts, ER diagrams. Prefer SVG with explicit coordinates.
+- `charts`: bar, line, pie, scatter, funnel, heatmap, choropleth, sparklines. Use simple SVG/HTML first; load Chart.js/D3 from an allowed CDN only when needed.
+- `mockups`: app screens, dashboards, forms, modals, cards, settings panels, nav bars, design-review prototypes.
+- `interactive`: sliders, toggles, calculators, quizzes, configurators, step-through explainers, anything with local JS state.
+- `art`: generated SVG patterns, animated compositions, particles, abstract visuals, playful visual metaphors.
+- `elicitation`: forms and structured input collectors. Submit buttons should call `sendPrompt(text)` with the user's answers.
+
+If the user asks what Codex Components can show, create a `show_widget` gallery with six cards and buttons that call `sendPrompt()` for live examples.
+
 ## Dashboard Sections
 
 - `metric_strip`: top-line KPIs with `label`, `value`, and optional `delta`.
@@ -64,3 +77,5 @@ Use a fenced `show_widget` JSON block for custom HTML/SVG, interactive mini-tool
 ## When Not To Use
 
 Use normal prose for quick answers, sensitive data that should not be visually amplified, or code where the code itself is the artifact.
+
+Do not claim Cowork-style live artifacts yet. Current `show_widget` data is baked into the generated widget. Runtime MCP/tool calls require a separate permissioned bridge.
