@@ -330,16 +330,17 @@ function mountBlock(state, block) {
 function findCodeBlockShell(node, raw) {
   let current = node;
   const rawStart = String(raw || "").trim().slice(0, 40);
-  for (let i = 0; i < 6 && current?.parentElement; i += 1) {
+  for (let i = 0; i < 8 && current?.parentElement; i += 1) {
     const parent = current.parentElement;
     const text = parent.textContent || "";
     const looksLikeCodeShell =
       text.includes(rawStart)
       && (parent.querySelector?.("button, svg, [aria-label*='opy'], [title*='opy']")
-        || /^(json|codex|codex-component)\s*\{/.test(text.trim()));
+        || /^(json|codex|codex-component|show_widget|show-widget)\s*\{/.test(text.trim()));
     const tooBroad =
       parent.matches?.("article, [data-message-author-role], main, body")
-      || parent.querySelectorAll?.("pre, code").length > 1;
+      || parent.querySelectorAll?.("pre").length > 1
+      || parent.querySelectorAll?.("[data-codexmod-component-mount]").length > 0;
     if (looksLikeCodeShell && !tooBroad) current = parent;
     else break;
   }
@@ -497,19 +498,10 @@ function renderHtmlWidget(target, descriptor, raw, state) {
 
 function renderShowWidget(target, descriptor, raw, state) {
   target.innerHTML = "";
-  const shell = el("section", { className: "codexmod-component codexmod-show-widget" });
-  const header = el("header", { className: "codexmod-component-header" }, [
-    el("div", {}, [
-      el("h3", { className: "codexmod-component-title" }, [humanizeTitle(descriptor.title || "widget")]),
-      el("p", { className: "codexmod-component-subtitle" }, ["Live widget"]),
-    ]),
-    toolbar(descriptor, raw, state),
-  ]);
-  const body = el("div", { className: "codexmod-component-body codexmod-show-widget-body" }, [
+  const body = el("section", { className: "codexmod-show-widget-body" }, [
     el("div", { className: "codexmod-widget-loading" }, loadingMessages(descriptor).map((message) => el("span", {}, [message]))),
   ]);
-  shell.append(header, body);
-  target.append(shell);
+  target.append(body);
   observeLazyWidget(state, body, () => mountShowWidgetFrame(body, descriptor, state));
 }
 
@@ -545,7 +537,7 @@ function mountShowWidgetFrame(body, descriptor, state) {
   frame.className = "codexmod-widget-frame codexmod-show-widget-frame";
   frame.setAttribute("sandbox", "allow-scripts");
   frame.srcdoc = buildWidgetDocument(descriptor.widget_code || descriptor.html || descriptor.content || "");
-  frame.style.height = `${Number(descriptor.height) || 240}px`;
+  frame.style.height = `${Number(descriptor.height) || 120}px`;
   body.append(frame);
   const onMessage = (event) => {
     if (event.source !== frame.contentWindow) return;
@@ -567,7 +559,7 @@ function buildWidgetDocument(widgetCode) {
   const tokens = widgetTokenStyle();
   const svgMode = code.trimStart().toLowerCase().startsWith("<svg");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>${tokens}
-html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary);font:inherit;}
+html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary);font:inherit;overflow:hidden;}
 *{box-sizing:border-box}
 a{color:inherit}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
@@ -575,8 +567,16 @@ a{color:inherit}
 (() => {
   window.sendPrompt = (text) => parent.postMessage({ method: "codex/send-prompt", params: { text: String(text || "") } }, "*");
   window.openLink = (url) => parent.postMessage({ method: "codex/open-link", params: { url: String(url || "") } }, "*");
-  const notifySize = () => parent.postMessage({ method: "ui/notifications/size-changed", params: { height: Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight || 0) } }, "*");
-  new ResizeObserver(notifySize).observe(document.documentElement);
+  const contentHeight = () => Math.max(
+    document.documentElement.scrollHeight || 0,
+    document.body.scrollHeight || 0,
+    document.documentElement.offsetHeight || 0,
+    document.body.offsetHeight || 0,
+    document.documentElement.getBoundingClientRect().height || 0,
+    document.body.getBoundingClientRect().height || 0
+  );
+  const notifySize = () => parent.postMessage({ method: "ui/notifications/size-changed", params: { height: Math.ceil(contentHeight()) } }, "*");
+  new ResizeObserver(notifySize).observe(document.body);
   window.addEventListener("load", notifySize);
   requestAnimationFrame(notifySize);
   ${svgMode ? "document.body.style.display='inline-block';" : ""}
@@ -1332,6 +1332,30 @@ function installStyles(state) {
     .codexmod-intake-option { display:flex; align-items:center; gap:14px; min-height:56px; text-align:left; background:#111; }
     .codexmod-intake-option span { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:#050505; }
     .codexmod-widget-frame { width:100%; border:0; background:transparent; display:block; }
+    .codexmod-show-widget-body {
+      max-width: 100%;
+      margin: 12px 0;
+      background: transparent;
+    }
+    .codexmod-show-widget-frame {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      overflow: hidden;
+    }
+    .codexmod-widget-loading {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--color-text-tertiary, #888780);
+      font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .codexmod-widget-loading span {
+      border: 1px solid var(--color-border-tertiary, rgba(241,239,232,.14));
+      border-radius: 999px;
+      padding: 5px 8px;
+      background: var(--color-background-secondary, rgba(127,127,127,.08));
+    }
     .codexmod-error { padding: 14px; color: var(--cm-red); }
     .codexmod-settings {
       display: grid;
