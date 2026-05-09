@@ -297,7 +297,7 @@ function normalizeDescriptor(raw, language) {
 
 function mountBlock(state, block) {
   state.mounted.add(block.node);
-  const sourceNode = block.hideSource ? findCodeBlockShell(block.node, block.raw) : block.node;
+  const sourceNode = block.hideSource ? findCodeBlockShell(block.node, block.raw, block.language) : block.node;
   state.mounted.add(sourceNode);
   sourceNode.dataset.codexmodComponentSource = "true";
   if (block.hideSource) sourceNode.style.display = "none";
@@ -327,24 +327,44 @@ function mountBlock(state, block) {
   }
 }
 
-function findCodeBlockShell(node, raw) {
+function findCodeBlockShell(node, raw, language) {
   let current = node;
+  let shell = node;
   const rawStart = String(raw || "").trim().slice(0, 40);
+  const languagePattern = new RegExp(`^(${[
+    language,
+    "json",
+    "codex",
+    "codex-component",
+    "codex-widget",
+    "show_widget",
+    "show-widget",
+  ].filter(Boolean).map(escapeRegExp).join("|")})\\s*[\\r\\n{]`, "i");
   for (let i = 0; i < 8 && current?.parentElement; i += 1) {
     const parent = current.parentElement;
     const text = parent.textContent || "";
+    const trimmed = text.trim();
     const looksLikeCodeShell =
       text.includes(rawStart)
       && (parent.querySelector?.("button, svg, [aria-label*='opy'], [title*='opy']")
-        || /^(json|codex|codex-component|show_widget|show-widget)\s*\{/.test(text.trim()));
+        || languagePattern.test(trimmed)
+        || parent.matches?.("pre, code")
+        || parent.querySelector?.("pre, code"));
     const tooBroad =
       parent.matches?.("article, [data-message-author-role], main, body")
       || parent.querySelectorAll?.("pre").length > 1
       || parent.querySelectorAll?.("[data-codexmod-component-mount]").length > 0;
-    if (looksLikeCodeShell && !tooBroad) current = parent;
+    if (looksLikeCodeShell && !tooBroad) {
+      shell = parent;
+      current = parent;
+    }
     else break;
   }
-  return current;
+  return shell;
+}
+
+function escapeRegExp(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function renderShell(target, descriptor, raw, state, className) {
