@@ -64,7 +64,11 @@ function applyBennettDefaults() {
     const source = readFileSync(bennettIndex, "utf8");
     const patched = source
       .replace('"sidebar-action-grid": true,', '"sidebar-action-grid": false,')
-      .replace('"sidebar-project-backgrounds": true,', '"sidebar-project-backgrounds": false,');
+      .replace('"sidebar-project-backgrounds": true,', '"sidebar-project-backgrounds": false,')
+      .replace(
+        "function readFlag(api, id, fallback) {\n  const v = api.storage.get(`feature:${id}`, undefined);",
+        "function readFlag(api, id, fallback) {\n  if (id === \"sidebar-action-grid\" || id === \"sidebar-project-backgrounds\") return false;\n  const v = api.storage.get(`feature:${id}`, undefined);",
+      );
     if (patched !== source) writeFileSync(bennettIndex, patched);
   }
 
