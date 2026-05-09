@@ -33,7 +33,7 @@ The installer:
 - `codex-component` dashboards for tool/plugin/skill output.
 - Theme-aware Claude Cowork-style metric cards, insight grids, funnels, bar charts, tables, recommendations, and action chips.
 - Normal Markdown table polish.
-- YouTube embeds and Open Graph-style link cards outside tables.
+- Click-to-load YouTube cards and Open Graph-style link cards outside tables.
 - A Settings page under Tweaks where each renderer can be enabled or disabled.
 - Automatic prompt-contract injection for tool/plugin-like prompts, with an opt-out toggle.
 - A `codex-components` skill that teaches Codex how to create component dashboards, intake cards, embeds, and clean tables.

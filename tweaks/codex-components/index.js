@@ -41,7 +41,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   dashboards: true,
   intake: true,
   htmlWidgets: true,
-  mediaEmbeds: true,
+  mediaEmbeds: false,
   linkPreviews: true,
   tablePolish: true,
   autoPromptHelper: true,
@@ -635,15 +635,31 @@ function isPreviewableHttpUrl(href) {
 
 function renderYouTubeEmbed(videoId, href) {
   const safeId = encodeURIComponent(videoId);
-  return el("section", { className: "codexmod-link-card codexmod-video-card" }, [
-    el("iframe", {
-      src: `https://www.youtube-nocookie.com/embed/${safeId}`,
-      title: "YouTube video",
-      allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
-      allowfullscreen: "true",
-    }),
-    el("a", { href, target: "_blank", rel: "noreferrer" }, ["Open on YouTube"]),
+  const card = el("section", { className: "codexmod-link-card codexmod-video-card" }, [
+    el("div", { className: "codexmod-link-favicon codexmod-video-badge" }, ["▶"]),
+    el("div", {}, [
+      el("strong", {}, ["YouTube video"]),
+      el("span", {}, [new URL(href).hostname.replace(/^www\./, "")]),
+    ]),
+    el("div", { className: "codexmod-video-actions" }, [
+      button("Load video", () => loadYouTubeFrame(card, safeId)),
+      el("a", { href, target: "_blank", rel: "noreferrer" }, ["Open"]),
+    ]),
   ]);
+  return card;
+}
+
+function loadYouTubeFrame(card, safeId) {
+  card.classList.add("codexmod-video-card-loaded");
+  card.innerHTML = "";
+  card.append(el("iframe", {
+    src: `https://www.youtube-nocookie.com/embed/${safeId}`,
+    title: "YouTube video",
+    loading: "lazy",
+    referrerpolicy: "strict-origin-when-cross-origin",
+    allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+    allowfullscreen: "true",
+  }));
 }
 
 function renderLinkPreview(href, label) {
@@ -773,7 +789,7 @@ function renderSettingsPage(root, state) {
     ]),
     settingsGroup("Automatic polish", [
       toggleRow(state, "tablePolish", "Polish normal tables", "Restyle Markdown/tool tables so they read closer to Claude Cowork."),
-      toggleRow(state, "mediaEmbeds", "Embed video links", "Turn YouTube links into playable cards outside tables."),
+      toggleRow(state, "mediaEmbeds", "Preview video links", "Turn YouTube links into click-to-load video cards outside tables."),
       toggleRow(state, "linkPreviews", "Open Graph-style link cards", "Show clean link cards outside tables without touching tabular data."),
       toggleRow(state, "autoPromptHelper", "Prompt helper", "Keep a copyable instruction contract for model responses that should become components."),
       toggleRow(state, "promptInjection", "Automatic prompt injection", "Quietly append the component contract to tool/plugin-like requests."),
@@ -1003,19 +1019,43 @@ function installStyles(state) {
       font-weight: 700;
     }
     .codexmod-video-card {
-      display: block;
+      display: flex;
       max-width: 720px;
+    }
+    .codexmod-video-actions {
+      display:flex;
+      align-items:center;
+      gap: 8px;
+      margin-left: auto;
+      flex: 0 0 auto;
+    }
+    .codexmod-video-actions button {
+      border: 1px solid var(--color-border-tertiary, rgba(44,44,42,.16));
+      border-radius: 8px;
+      background: var(--color-background-primary, #ffffff);
+      color: var(--color-text-primary, #2c2c2a);
+      padding: 5px 8px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .codexmod-video-badge {
+      color: #f09595;
+    }
+    .codexmod-video-card-loaded {
+      display: block;
       padding: 0;
       overflow: hidden;
+      background: #111;
     }
-    .codexmod-video-card iframe {
+    .codexmod-video-card-loaded iframe {
       display: block;
       width: 100%;
       aspect-ratio: 16 / 9;
       border: 0;
       background: #111;
     }
-    .codexmod-video-card a { display:block; padding: 10px 12px; }
+    .codexmod-video-card-loaded a { display:block; padding: 10px 12px; }
     .codexmod-recommendations { margin:0; padding-left: 18px; display:grid; gap:8px; }
     .codexmod-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .codexmod-intake-question { margin:0; font-size:24px; line-height:1.2; font-family: Georgia, ui-serif, serif; font-weight:500; }
