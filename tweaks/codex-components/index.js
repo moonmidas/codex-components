@@ -399,6 +399,10 @@ function renderDashboard(target, descriptor, raw, state) {
     if (section.type === "metric_strip") renderMetricStrip(body, section);
     else if (section.type === "insight_grid") renderInsightGrid(body, section);
     else if (section.type === "funnel" || section.type === "bar_chart") renderBars(body, section);
+    else if (section.type === "progress_bars") renderProgressBars(body, section);
+    else if (section.type === "numbered_callouts") renderNumberedCallouts(body, section);
+    else if (section.type === "record_cards") renderRecordCards(body, section);
+    else if (section.type === "alert_blocks") renderAlertBlocks(body, section);
     else if (section.type === "table") renderTable(body, section);
     else if (section.type === "recommendations") renderRecommendations(body, section);
     else if (section.type === "action_chips") renderActions(body, section);
@@ -410,10 +414,10 @@ function renderMetricStrip(body, section) {
   const wrap = sectionWrap(section, "codexmod-metrics-section");
   const grid = el("div", { className: "codexmod-metrics" });
   for (const item of section.items || section.metrics || []) {
-    grid.append(el("article", { className: "codexmod-metric" }, [
+    grid.append(el("article", { className: `codexmod-metric ${toneClass(item.tone || item.color)}` }, [
       el("span", { className: "codexmod-label" }, [item.label || item.name || "Metric"]),
       el("strong", { className: "codexmod-value" }, [String(item.value ?? "")]),
-      item.delta ? el("span", { className: "codexmod-note" }, [item.delta]) : null,
+      item.delta ? el("span", { className: "codexmod-note" }, [trendIcon(item.trend || item.status), item.delta]) : null,
     ]));
   }
   wrap.append(grid);
@@ -438,7 +442,7 @@ function renderBars(body, section) {
   const max = Math.max(1, ...items.map((item) => Number(item.value) || 0));
   const wrap = sectionWrap(section, "codexmod-bars-section");
   for (const item of items) {
-    wrap.append(el("div", { className: "codexmod-bar-row" }, [
+    wrap.append(el("div", { className: `codexmod-bar-row ${toneClass(item.tone || item.color)}` }, [
       el("span", { className: "codexmod-bar-label" }, [item.label || item.name || "Item"]),
       el("span", { className: "codexmod-bar-track" }, [
         el("span", {
@@ -447,6 +451,79 @@ function renderBars(body, section) {
         }),
       ]),
       el("strong", { className: "codexmod-bar-value" }, [String(item.value ?? "")]),
+    ]));
+  }
+  body.append(wrap);
+}
+
+function renderProgressBars(body, section) {
+  const items = section.items || [];
+  const wrap = sectionWrap(section, "codexmod-progress-section");
+  for (const item of items) {
+    const value = Math.max(0, Math.min(100, Number(item.percent ?? item.value) || 0));
+    wrap.append(el("div", { className: `codexmod-progress ${toneClass(item.tone || item.color)}` }, [
+      el("div", { className: "codexmod-progress-head" }, [
+        el("span", {}, [item.label || item.name || "Progress"]),
+        el("strong", {}, [`${value}%`]),
+      ]),
+      el("span", { className: "codexmod-progress-track" }, [
+        el("span", { className: "codexmod-progress-fill", style: `width:${value}%` }),
+      ]),
+      item.body ? el("p", {}, [item.body]) : null,
+    ]));
+  }
+  body.append(wrap);
+}
+
+function renderNumberedCallouts(body, section) {
+  const wrap = sectionWrap(section, "codexmod-numbered-section");
+  for (const [index, item] of (section.items || []).entries()) {
+    wrap.append(el("article", { className: `codexmod-numbered ${toneClass(item.tone || item.color || item.status)}` }, [
+      el("div", { className: "codexmod-numbered-head" }, [
+        el("span", { className: "codexmod-rank" }, [`#${item.rank || index + 1}`]),
+        el("strong", { className: "codexmod-numbered-value" }, [String(item.value ?? item.metric ?? "")]),
+        el("h5", {}, [item.title || item.label || "Finding"]),
+      ]),
+      item.body ? el("p", {}, [item.body]) : null,
+      item.recommendation ? el("div", { className: "codexmod-recommendation-box" }, [item.icon || "Lightbulb", " ", item.recommendation]) : null,
+    ]));
+  }
+  body.append(wrap);
+}
+
+function renderRecordCards(body, section) {
+  const wrap = sectionWrap(section, "codexmod-records-section");
+  const grid = el("div", { className: "codexmod-records" });
+  for (const record of section.items || section.records || []) {
+    grid.append(el("article", { className: `codexmod-record ${toneClass(record.tone || record.status)}` }, [
+      el("div", { className: "codexmod-record-head" }, [
+        el("span", { className: "codexmod-avatar" }, [record.avatar || initials(record.title || record.name || "?")]),
+        el("div", {}, [
+          el("h5", {}, [record.title || record.name || "Record"]),
+          record.subtitle ? el("p", {}, [record.subtitle]) : null,
+        ]),
+      ]),
+      el("div", { className: "codexmod-record-fields" }, (record.fields || []).map((field) =>
+        el("div", {}, [el("span", {}, [field.label || field.key || "Field"]), el("strong", {}, [field.value ?? ""])]),
+      )),
+      record.pills ? el("div", { className: "codexmod-pills" }, record.pills.map((pill) =>
+        el("span", { className: `codexmod-pill ${toneClass(pill.tone || pill.color)}` }, [pill.label || pill]),
+      )) : null,
+    ]));
+  }
+  wrap.append(grid);
+  body.append(wrap);
+}
+
+function renderAlertBlocks(body, section) {
+  const wrap = sectionWrap(section, "codexmod-alerts-section");
+  for (const item of section.items || section.alerts || []) {
+    wrap.append(el("article", { className: `codexmod-alert ${toneClass(item.tone || item.status || item.color)}` }, [
+      el("span", { className: "codexmod-alert-icon" }, [item.icon || alertIcon(item.tone || item.status)]),
+      el("div", {}, [
+        el("strong", {}, [item.title || item.label || "Note"]),
+        item.body ? el("p", {}, [item.body]) : null,
+      ]),
     ]));
   }
   body.append(wrap);
@@ -483,6 +560,39 @@ function renderCallout(body, section) {
   const wrap = sectionWrap(section, "codexmod-callout-section");
   wrap.append(el("p", {}, [section.body || section.text || section.markdown || `Unsupported section: ${section.type || "unknown"}`]));
   body.append(wrap);
+}
+
+function toneClass(tone) {
+  const normalized = String(tone || "").toLowerCase();
+  if (["teal", "success", "green", "good", "up"].includes(normalized)) return "tone-teal";
+  if (["amber", "warning", "caution", "medium"].includes(normalized)) return "tone-amber";
+  if (["red", "danger", "bad", "down", "critical"].includes(normalized)) return "tone-red";
+  if (["coral"].includes(normalized)) return "tone-coral";
+  if (["pink"].includes(normalized)) return "tone-pink";
+  if (["purple"].includes(normalized)) return "tone-purple";
+  if (["green"].includes(normalized)) return "tone-green";
+  if (["gray", "grey", "neutral"].includes(normalized)) return "tone-gray";
+  return "tone-blue";
+}
+
+function trendIcon(trend) {
+  const normalized = String(trend || "").toLowerCase();
+  if (["up", "increase", "good"].includes(normalized)) return "↗ ";
+  if (["down", "decrease", "bad"].includes(normalized)) return "↘ ";
+  if (["warning", "caution"].includes(normalized)) return "⚠ ";
+  return "";
+}
+
+function alertIcon(tone) {
+  const normalized = String(tone || "").toLowerCase();
+  if (["success", "good", "teal", "green"].includes(normalized)) return "✓";
+  if (["danger", "bad", "red", "critical"].includes(normalized)) return "!";
+  if (["warning", "amber", "caution"].includes(normalized)) return "!";
+  return "i";
+}
+
+function initials(text) {
+  return String(text || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
 function renderIntake(target, descriptor, raw, state) {
@@ -1049,7 +1159,7 @@ function promptContract(settings) {
   const contract = [
     "When tool results contain analytics, funnel, campaign, revenue, retention, table, or comparison data, prefer a codex-component dashboard instead of prose-only output.",
     "Use a fenced JSON block with language codex-component.",
-    "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, table, recommendations, action_chips.",
+    "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, progress_bars, numbered_callouts, record_cards, alert_blocks, table, recommendations, action_chips.",
     "For custom HTML/SVG visuals or interactive mini-tools, use a fenced show_widget JSON block with title, widget_code, and loading_messages.",
     "Use concise labels, short interpretations, and color intent: blue neutral, teal good, amber warning, red problem.",
     "For video URLs, leave the URL as a normal link; Codex Components will embed it outside tables.",
@@ -1086,6 +1196,11 @@ function installStyles(state) {
       --cm-teal: #1d9e75;
       --cm-red: #e24b4a;
       --cm-amber: #ba7517;
+      --cm-purple: #7f77dd;
+      --cm-coral: #d85a30;
+      --cm-pink: #c4497f;
+      --cm-green: #639922;
+      --cm-gray: #888780;
       color: var(--cm-text);
       font: 13px/1.42 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       margin: 12px 0;
@@ -1103,8 +1218,22 @@ function installStyles(state) {
         --cm-teal: #5dcaa5;
         --cm-red: #f09595;
         --cm-amber: #fac775;
+        --cm-purple: #afa9ec;
+        --cm-coral: #f0997b;
+        --cm-pink: #ef8bb8;
+        --cm-green: #97c459;
+        --cm-gray: #b4b2a9;
       }
     }
+    .tone-blue { --tone: var(--cm-blue); --tone-bg: rgba(133,183,235,.13); --tone-border: rgba(133,183,235,.36); }
+    .tone-teal { --tone: var(--cm-teal); --tone-bg: rgba(93,202,165,.13); --tone-border: rgba(93,202,165,.36); }
+    .tone-red { --tone: var(--cm-red); --tone-bg: rgba(240,149,149,.13); --tone-border: rgba(240,149,149,.36); }
+    .tone-amber { --tone: var(--cm-amber); --tone-bg: rgba(250,199,117,.14); --tone-border: rgba(250,199,117,.38); }
+    .tone-purple { --tone: var(--cm-purple); --tone-bg: rgba(175,169,236,.14); --tone-border: rgba(175,169,236,.38); }
+    .tone-coral { --tone: var(--cm-coral); --tone-bg: rgba(240,153,123,.14); --tone-border: rgba(240,153,123,.38); }
+    .tone-pink { --tone: var(--cm-pink); --tone-bg: rgba(239,139,184,.14); --tone-border: rgba(239,139,184,.38); }
+    .tone-green { --tone: var(--cm-green); --tone-bg: rgba(151,196,89,.14); --tone-border: rgba(151,196,89,.38); }
+    .tone-gray { --tone: var(--cm-gray); --tone-bg: rgba(180,178,169,.12); --tone-border: rgba(180,178,169,.3); }
     .codexmod-component {
       background: var(--cm-bg);
       border: 1px solid var(--cm-border);
@@ -1160,7 +1289,7 @@ function installStyles(state) {
       padding: 13px;
     }
     .codexmod-label { display:block; color:var(--cm-faint); font-size:11px; text-transform:uppercase; letter-spacing:.07em; }
-    .codexmod-value { display:block; margin-top:6px; font-size:24px; font-weight:600; color:var(--cm-blue); }
+    .codexmod-value { display:block; margin-top:6px; font-size:24px; font-weight:600; color:var(--tone, var(--cm-blue)); }
     .codexmod-note { display:block; margin-top:3px; color:var(--cm-muted); font-size:12px; }
     .codexmod-insight h5 { margin:0 0 7px; font-size:14px; }
     .codexmod-insight p,
@@ -1175,8 +1304,110 @@ function installStyles(state) {
     }
     .codexmod-bar-label { color: var(--cm-muted); }
     .codexmod-bar-track { height: 9px; border-radius: 999px; background: var(--cm-panel-2); overflow: hidden; }
-    .codexmod-bar-fill { display:block; height:100%; border-radius:999px; background: var(--cm-blue); }
+    .codexmod-bar-fill { display:block; height:100%; border-radius:999px; background: var(--tone, var(--cm-blue)); }
     .codexmod-bar-value { font-size: 12px; }
+    .codexmod-progress { display:grid; gap:6px; margin:10px 0; }
+    .codexmod-progress-head { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--cm-muted); }
+    .codexmod-progress-head strong { color:var(--tone, var(--cm-blue)); font-variant-numeric: tabular-nums; }
+    .codexmod-progress-track { display:block; height:10px; border-radius:999px; background:var(--cm-panel-2); overflow:hidden; }
+    .codexmod-progress-fill { display:block; height:100%; border-radius:999px; background:var(--tone, var(--cm-blue)); }
+    .codexmod-progress p { margin:0; color:var(--cm-muted); font-size:12px; }
+    .codexmod-numbered { padding:18px 0; border-bottom:1px solid var(--cm-border); }
+    .codexmod-numbered:last-child { border-bottom:0; }
+    .codexmod-numbered-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+    .codexmod-rank {
+      display:grid;
+      place-items:center;
+      width:42px;
+      height:42px;
+      border-radius:999px;
+      background:var(--tone-bg);
+      color:var(--tone, var(--cm-blue));
+      border:1px solid var(--tone-border);
+      font-weight:650;
+      flex:0 0 auto;
+    }
+    .codexmod-numbered-value {
+      color:var(--tone, var(--cm-blue));
+      font-size:34px;
+      line-height:1;
+      font-weight:650;
+      letter-spacing:0;
+      font-variant-numeric: tabular-nums;
+    }
+    .codexmod-numbered h5 { margin:0; font-size:18px; font-weight:600; }
+    .codexmod-numbered p { margin:10px 0 0 56px; color:var(--cm-muted); font-size:14px; line-height:1.45; }
+    .codexmod-recommendation-box {
+      margin:12px 0 0 56px;
+      padding:10px 12px;
+      border-radius:9px;
+      background:var(--cm-panel);
+      border:1px solid var(--cm-border);
+      color:var(--cm-muted);
+      line-height:1.4;
+    }
+    .codexmod-alert {
+      display:flex;
+      gap:10px;
+      padding:12px;
+      margin:9px 0;
+      border-radius:10px;
+      border:1px solid var(--tone-border);
+      background:var(--tone-bg);
+    }
+    .codexmod-alert-icon {
+      display:grid;
+      place-items:center;
+      width:22px;
+      height:22px;
+      border-radius:999px;
+      background:var(--tone, var(--cm-blue));
+      color:var(--cm-bg);
+      font-weight:700;
+      flex:0 0 auto;
+    }
+    .codexmod-alert strong { display:block; color:var(--cm-text); }
+    .codexmod-alert p { margin:3px 0 0; color:var(--cm-muted); }
+    .codexmod-records { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+    .codexmod-record {
+      background:var(--cm-panel);
+      border:1px solid var(--tone-border, var(--cm-border));
+      border-radius:10px;
+      padding:12px;
+      display:grid;
+      gap:10px;
+    }
+    .codexmod-record-head { display:flex; align-items:center; gap:10px; }
+    .codexmod-avatar {
+      display:grid;
+      place-items:center;
+      width:34px;
+      height:34px;
+      border-radius:999px;
+      background:var(--tone-bg);
+      color:var(--tone, var(--cm-blue));
+      border:1px solid var(--tone-border);
+      font-weight:650;
+      flex:0 0 auto;
+    }
+    .codexmod-record h5 { margin:0; font-size:14px; font-weight:650; }
+    .codexmod-record p { margin:2px 0 0; color:var(--cm-muted); font-size:12px; }
+    .codexmod-record-fields { display:grid; gap:5px; }
+    .codexmod-record-fields div { display:flex; justify-content:space-between; gap:10px; color:var(--cm-muted); }
+    .codexmod-record-fields strong { color:var(--cm-text); font-weight:500; text-align:right; }
+    .codexmod-pills { display:flex; flex-wrap:wrap; gap:6px; }
+    .codexmod-pill {
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      border:1px solid var(--tone-border);
+      background:var(--tone-bg);
+      color:var(--tone, var(--cm-blue));
+      padding:3px 8px;
+      font-size:11px;
+      line-height:1.2;
+      font-weight:500;
+    }
     .codexmod-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .codexmod-table th, .codexmod-table td { text-align:left; padding:8px; border-bottom:1px solid var(--cm-border); }
     .codexmod-table th { color: var(--cm-faint); text-transform: uppercase; letter-spacing:.06em; font-size: 10px; }

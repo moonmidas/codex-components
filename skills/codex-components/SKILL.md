@@ -50,9 +50,27 @@ If the user asks what Codex Components can show, create a `show_widget` gallery 
 - `insight_grid`: 2-6 cards with `title` and `body`.
 - `funnel`: ordered conversion steps with `label` and `value`.
 - `bar_chart`: horizontal comparison bars with `label` and `value`.
+- `progress_bars`: labeled percentages with colored horizontal progress tracks.
+- `numbered_callouts`: ranked findings with `rank`, `value`, `title`, `body`, `recommendation`, and `tone`.
+- `record_cards`: contact/account/receipt-like cards with `title`, `subtitle`, `avatar`, `fields`, `pills`, and `tone`.
+- `alert_blocks`: success/warning/danger/info notes with `title`, `body`, `tone`, and optional `icon`.
 - `table`: small tables with `columns` and `rows`.
 - `recommendations`: prioritized actions with `title` and `body`.
 - `action_chips`: follow-up prompts with `label` and `prompt`.
+
+## Visual Vocabulary
+
+Use these primitives before hand-rolling raw HTML:
+
+- Numbered callouts for ranked findings and funnel leaks.
+- Metric cards for compact stat tiles, 2-4 columns.
+- Badges and pills for status, categories, versions, segments.
+- Alert blocks for important notes, risks, warnings, and success states.
+- Progress bars for percentage and completion comparisons.
+- Data record cards for users, accounts, receipts, contacts, issues, or sessions.
+- `action_chips` for `sendPrompt`-style follow-ups.
+
+Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`, `gray`. Choose colors semantically: blue neutral, teal good, amber caution, red problem.
 
 ## Style
 
