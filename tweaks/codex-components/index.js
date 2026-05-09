@@ -403,6 +403,10 @@ function renderDashboard(target, descriptor, raw, state) {
     else if (section.type === "numbered_callouts") renderNumberedCallouts(body, section);
     else if (section.type === "record_cards") renderRecordCards(body, section);
     else if (section.type === "alert_blocks") renderAlertBlocks(body, section);
+    else if (section.type === "comparison_cards") renderComparisonCards(body, section);
+    else if (section.type === "timeline") renderTimeline(body, section);
+    else if (section.type === "pull_quote") renderPullQuote(body, section);
+    else if (section.type === "tag_cloud") renderTagCloud(body, section);
     else if (section.type === "table") renderTable(body, section);
     else if (section.type === "recommendations") renderRecommendations(body, section);
     else if (section.type === "action_chips") renderActions(body, section);
@@ -417,6 +421,7 @@ function renderMetricStrip(body, section) {
     grid.append(el("article", { className: `codexmod-metric ${toneClass(item.tone || item.color)}` }, [
       el("span", { className: "codexmod-label" }, [item.label || item.name || "Metric"]),
       el("strong", { className: "codexmod-value" }, [String(item.value ?? "")]),
+      item.sparkline ? renderSparkline(item.sparkline, item.tone || item.color) : null,
       item.delta ? el("span", { className: "codexmod-note" }, [trendIcon(item.trend || item.status), item.delta]) : null,
     ]));
   }
@@ -515,6 +520,56 @@ function renderRecordCards(body, section) {
   body.append(wrap);
 }
 
+function renderComparisonCards(body, section) {
+  const wrap = sectionWrap(section, "codexmod-comparison-section");
+  const grid = el("div", { className: "codexmod-comparisons" });
+  for (const item of section.items || section.cards || []) {
+    grid.append(el("article", { className: `codexmod-comparison ${toneClass(item.tone || item.color)} ${item.featured || item.popular ? "is-featured" : ""}` }, [
+      item.badge ? el("span", { className: `codexmod-pill ${toneClass(item.tone || item.color)}` }, [item.badge]) : null,
+      el("h5", {}, [item.title || item.label || "Option"]),
+      item.price || item.value ? el("strong", { className: "codexmod-comparison-value" }, [item.price || item.value]) : null,
+      item.body ? el("p", {}, [item.body]) : null,
+      item.features ? el("ul", {}, item.features.map((feature) => el("li", {}, [feature]))) : null,
+    ]));
+  }
+  wrap.append(grid);
+  body.append(wrap);
+}
+
+function renderTimeline(body, section) {
+  const wrap = sectionWrap(section, "codexmod-timeline-section");
+  const list = el("ol", { className: "codexmod-timeline" });
+  for (const item of section.items || section.steps || []) {
+    list.append(el("li", { className: `codexmod-timeline-item ${toneClass(item.tone || item.status)}` }, [
+      el("span", { className: "codexmod-timeline-dot" }, [timelineIcon(item.status || item.tone)]),
+      el("div", {}, [
+        el("strong", {}, [item.title || item.label || "Step"]),
+        item.body ? el("p", {}, [item.body]) : null,
+        item.meta ? el("span", { className: "codexmod-timeline-meta" }, [item.meta]) : null,
+      ]),
+    ]));
+  }
+  wrap.append(list);
+  body.append(wrap);
+}
+
+function renderPullQuote(body, section) {
+  const wrap = sectionWrap(section, "codexmod-pullquote-section");
+  wrap.append(el("blockquote", { className: `codexmod-pullquote ${toneClass(section.tone || section.color)}` }, [
+    el("p", {}, [section.quote || section.body || section.text || ""]),
+    section.source ? el("cite", {}, [section.source]) : null,
+  ]));
+  body.append(wrap);
+}
+
+function renderTagCloud(body, section) {
+  const wrap = sectionWrap(section, "codexmod-tags-section");
+  wrap.append(el("div", { className: "codexmod-tag-cloud" }, (section.items || section.tags || []).map((tag) =>
+    el("span", { className: `codexmod-pill ${toneClass(tag.tone || tag.color)}` }, [tag.label || tag]),
+  )));
+  body.append(wrap);
+}
+
 function renderAlertBlocks(body, section) {
   const wrap = sectionWrap(section, "codexmod-alerts-section");
   for (const item of section.items || section.alerts || []) {
@@ -556,6 +611,22 @@ function renderActions(body, section) {
   body.append(wrap);
 }
 
+function renderSparkline(values, tone) {
+  const nums = Array.isArray(values) ? values.map(Number).filter((value) => Number.isFinite(value)) : [];
+  if (nums.length < 2) return null;
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const range = max - min || 1;
+  const points = nums.map((value, index) => {
+    const x = (index / (nums.length - 1)) * 100;
+    const y = 28 - ((value - min) / range) * 24;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return el("svg", { className: `codexmod-sparkline ${toneClass(tone)}`, viewBox: "0 0 100 32", role: "img" }, [
+    el("polyline", { points, fill: "none", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+  ]);
+}
+
 function renderCallout(body, section) {
   const wrap = sectionWrap(section, "codexmod-callout-section");
   wrap.append(el("p", {}, [section.body || section.text || section.markdown || `Unsupported section: ${section.type || "unknown"}`]));
@@ -580,6 +651,13 @@ function trendIcon(trend) {
   if (["up", "increase", "good"].includes(normalized)) return "↗ ";
   if (["down", "decrease", "bad"].includes(normalized)) return "↘ ";
   if (["warning", "caution"].includes(normalized)) return "⚠ ";
+  return "";
+}
+
+function timelineIcon(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["complete", "completed", "success", "done", "green", "teal"].includes(normalized)) return "✓";
+  if (["warning", "blocked", "caution", "amber"].includes(normalized)) return "!";
   return "";
 }
 
@@ -1159,7 +1237,7 @@ function promptContract(settings) {
   const contract = [
     "When tool results contain analytics, funnel, campaign, revenue, retention, table, or comparison data, prefer a codex-component dashboard instead of prose-only output.",
     "Use a fenced JSON block with language codex-component.",
-    "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, progress_bars, numbered_callouts, record_cards, alert_blocks, table, recommendations, action_chips.",
+    "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, progress_bars, numbered_callouts, record_cards, alert_blocks, comparison_cards, timeline, pull_quote, tag_cloud, table, recommendations, action_chips.",
     "For custom HTML/SVG visuals or interactive mini-tools, use a fenced show_widget JSON block with title, widget_code, and loading_messages.",
     "Use concise labels, short interpretations, and color intent: blue neutral, teal good, amber warning, red problem.",
     "For video URLs, leave the URL as a normal link; Codex Components will embed it outside tables.",
@@ -1201,8 +1279,11 @@ function installStyles(state) {
       --cm-pink: #c4497f;
       --cm-green: #639922;
       --cm-gray: #888780;
+      --cm-font-sans: var(--font-sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+      --cm-font-serif: var(--font-serif, ui-serif, Georgia, serif);
+      --cm-font-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
       color: var(--cm-text);
-      font: 13px/1.42 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 13px/1.42 var(--cm-font-sans);
       margin: 12px 0;
     }
     @media (prefers-color-scheme: dark) {
@@ -1249,7 +1330,7 @@ function installStyles(state) {
       padding: 16px 18px 10px;
       border-bottom: 1px solid var(--cm-border);
     }
-    .codexmod-component-title { margin: 0; font-size: 15px; font-weight: 600; }
+    .codexmod-component-title { margin: 0; font-size: 16px; font-weight: 500; }
     .codexmod-component-subtitle { margin: 4px 0 0; color: var(--cm-muted); font-size: 12px; }
     .codexmod-component-toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
     .codexmod-component-toolbar button,
@@ -1273,7 +1354,7 @@ function installStyles(state) {
       font-size: 11px;
       letter-spacing: .08em;
       text-transform: uppercase;
-      font-weight: 600;
+      font-weight: 500;
     }
     .codexmod-metrics,
     .codexmod-insights {
@@ -1324,18 +1405,18 @@ function installStyles(state) {
       background:var(--tone-bg);
       color:var(--tone, var(--cm-blue));
       border:1px solid var(--tone-border);
-      font-weight:650;
+      font-weight:500;
       flex:0 0 auto;
     }
     .codexmod-numbered-value {
       color:var(--tone, var(--cm-blue));
       font-size:34px;
       line-height:1;
-      font-weight:650;
+      font-weight:500;
       letter-spacing:0;
       font-variant-numeric: tabular-nums;
     }
-    .codexmod-numbered h5 { margin:0; font-size:18px; font-weight:600; }
+    .codexmod-numbered h5 { margin:0; font-size:18px; font-weight:500; }
     .codexmod-numbered p { margin:10px 0 0 56px; color:var(--cm-muted); font-size:14px; line-height:1.45; }
     .codexmod-recommendation-box {
       margin:12px 0 0 56px;
@@ -1363,7 +1444,7 @@ function installStyles(state) {
       border-radius:999px;
       background:var(--tone, var(--cm-blue));
       color:var(--cm-bg);
-      font-weight:700;
+      font-weight:500;
       flex:0 0 auto;
     }
     .codexmod-alert strong { display:block; color:var(--cm-text); }
@@ -1387,10 +1468,10 @@ function installStyles(state) {
       background:var(--tone-bg);
       color:var(--tone, var(--cm-blue));
       border:1px solid var(--tone-border);
-      font-weight:650;
+      font-weight:500;
       flex:0 0 auto;
     }
-    .codexmod-record h5 { margin:0; font-size:14px; font-weight:650; }
+    .codexmod-record h5 { margin:0; font-size:14px; font-weight:500; }
     .codexmod-record p { margin:2px 0 0; color:var(--cm-muted); font-size:12px; }
     .codexmod-record-fields { display:grid; gap:5px; }
     .codexmod-record-fields div { display:flex; justify-content:space-between; gap:10px; color:var(--cm-muted); }
@@ -1408,6 +1489,73 @@ function installStyles(state) {
       line-height:1.2;
       font-weight:500;
     }
+    .codexmod-comparisons { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+    .codexmod-comparison {
+      position:relative;
+      display:grid;
+      gap:8px;
+      padding:14px;
+      border:1px solid var(--cm-border);
+      border-radius:10px;
+      background:var(--cm-panel);
+    }
+    .codexmod-comparison.is-featured { border:2px solid var(--tone, var(--cm-blue)); }
+    .codexmod-comparison h5 { margin:0; font-size:16px; font-weight:500; }
+    .codexmod-comparison p { margin:0; color:var(--cm-muted); }
+    .codexmod-comparison-value { color:var(--tone, var(--cm-blue)); font-size:22px; font-weight:500; font-variant-numeric:tabular-nums; }
+    .codexmod-comparison ul { margin:0; padding-left:18px; color:var(--cm-muted); display:grid; gap:4px; }
+    .codexmod-timeline { position:relative; list-style:none; margin:0; padding:0; display:grid; gap:0; }
+    .codexmod-timeline:before {
+      content:"";
+      position:absolute;
+      left:14px;
+      top:16px;
+      bottom:16px;
+      width:1px;
+      background:var(--cm-border);
+    }
+    .codexmod-timeline-item {
+      position:relative;
+      display:grid;
+      grid-template-columns:30px 1fr;
+      gap:10px;
+      padding:0 0 16px;
+    }
+    .codexmod-timeline-dot {
+      z-index:1;
+      display:grid;
+      place-items:center;
+      width:28px;
+      height:28px;
+      border-radius:999px;
+      border:1px solid var(--tone-border);
+      background:var(--cm-bg);
+      color:var(--tone, var(--cm-gray));
+      font-weight:500;
+    }
+    .codexmod-timeline-item strong { display:block; font-weight:500; color:var(--cm-text); }
+    .codexmod-timeline-item p { margin:3px 0 0; color:var(--cm-muted); }
+    .codexmod-timeline-meta { display:block; margin-top:4px; color:var(--cm-faint); font-size:12px; }
+    .codexmod-pullquote {
+      margin:0;
+      padding:4px 0 4px 16px;
+      border-left:3px solid var(--tone, var(--cm-blue));
+    }
+    .codexmod-pullquote p {
+      margin:0;
+      font: italic 18px/1.45 var(--cm-font-serif);
+      color:var(--cm-text);
+    }
+    .codexmod-pullquote cite { display:block; margin-top:8px; color:var(--cm-muted); font-style:normal; font-size:12px; }
+    .codexmod-tag-cloud { display:flex; flex-wrap:wrap; gap:7px; }
+    .codexmod-sparkline {
+      display:block;
+      width:100%;
+      max-width:120px;
+      height:32px;
+      margin-top:8px;
+    }
+    .codexmod-sparkline polyline { stroke:var(--tone, var(--cm-blue)); }
     .codexmod-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .codexmod-table th, .codexmod-table td { text-align:left; padding:8px; border-bottom:1px solid var(--cm-border); }
     .codexmod-table th { color: var(--cm-faint); text-transform: uppercase; letter-spacing:.06em; font-size: 10px; }

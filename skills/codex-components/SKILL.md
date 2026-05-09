@@ -54,6 +54,10 @@ If the user asks what Codex Components can show, create a `show_widget` gallery 
 - `numbered_callouts`: ranked findings with `rank`, `value`, `title`, `body`, `recommendation`, and `tone`.
 - `record_cards`: contact/account/receipt-like cards with `title`, `subtitle`, `avatar`, `fields`, `pills`, and `tone`.
 - `alert_blocks`: success/warning/danger/info notes with `title`, `body`, `tone`, and optional `icon`.
+- `comparison_cards`: side-by-side options with `title`, `value`/`price`, `body`, `features`, `badge`, `featured`, and `tone`.
+- `timeline`: vertical step trackers with `title`, `body`, `status`, `meta`, and `tone`.
+- `pull_quote`: serif italic quote blocks with `quote`, `source`, and `tone`.
+- `tag_cloud`: colored pill collections using `items` or `tags`.
 - `table`: small tables with `columns` and `rows`.
 - `recommendations`: prioritized actions with `title` and `body`.
 - `action_chips`: follow-up prompts with `label` and `prompt`.
@@ -68,6 +72,11 @@ Use these primitives before hand-rolling raw HTML:
 - Alert blocks for important notes, risks, warnings, and success states.
 - Progress bars for percentage and completion comparisons.
 - Data record cards for users, accounts, receipts, contacts, issues, or sessions.
+- Comparison cards for pricing, plan selection, A/B variants, or tradeoffs. Mark the preferred card with `featured: true`.
+- Timelines for step trackers, launches, user journeys, or incident states.
+- Pull quotes for testimonials, interview excerpts, or sharp findings.
+- Tag clouds for topics, categories, labels, or segments.
+- Sparklines in metric cards via `sparkline: [1, 3, 2, 5]`.
 - `action_chips` for `sendPrompt`-style follow-ups.
 
 Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`, `gray`. Choose colors semantically: blue neutral, teal good, amber caution, red problem.
@@ -75,6 +84,7 @@ Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`,
 ## Style
 
 - Use short labels, one-line interpretations, and readable numbers.
+- Match Claude/Cowork typography: inherited/system sans for UI, 22/18/16px headings, mostly 400/500 weights, tabular numerals for metrics, serif italic only for pull quotes.
 - In `show_widget`, write an HTML/SVG fragment, not a full document.
 - In `show_widget`, use inline CSS or a local `<style>` block and host CSS variables.
 - In `show_widget`, keep backgrounds transparent unless a surface is truly needed.
