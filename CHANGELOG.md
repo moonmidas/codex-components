@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 - 2026-05-10
+
+- Added a first-run Codex Components onboarding panel in the Codex++ Settings page.
+- Added startup and hourly GitHub manifest update checks.
+- Added an update button that appears when the published manifest version is newer than the installed tweak version and inserts a safe self-update prompt.
+
 ## 0.1.0 - 2026-05-09
 
 - Converted the repo from the old CDP command-palette experiment into a Codex++ bootstrap for Codex Components.

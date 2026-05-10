@@ -25,6 +25,11 @@ const {
   hasNearbyNativeRender,
   shouldDeferToNativeRenderer,
   loadSettings,
+  renderSettingsPage,
+  compareVersions,
+  checkForUpdates,
+  updatePromptText,
+  loadUpdateCache,
 } = tweak.__test;
 
 const ALL_DASHBOARD_SECTIONS = [
@@ -963,6 +968,173 @@ test("forces legacy component block rendering off even when stale settings enabl
   assert.equal(settings.promptInjection, false);
 });
 
+test("compares semantic versions for update checks", () => {
+  assert.equal(compareVersions("0.1.1", "0.1.0"), 1);
+  assert.equal(compareVersions("0.1.0", "0.1.1"), -1);
+  assert.equal(compareVersions("0.1.0", "0.1.0"), 0);
+  assert.equal(compareVersions("0.10.0", "0.2.9"), 1);
+  assert.equal(compareVersions("1.0.0-beta.2", "1.0.0-beta.1"), 1);
+});
+
+test("checks GitHub manifest and records an available update", async () => {
+  setupDom();
+  let requestedUrl = "";
+  tweakContext.fetch = async (url, options) => {
+    requestedUrl = String(url);
+    assert.equal(options.cache, "no-store");
+    return {
+      ok: true,
+      json: async () => ({ version: "9.9.9" }),
+    };
+  };
+  const state = testState();
+
+  const update = await checkForUpdates(state, { force: true });
+
+  assert.match(requestedUrl, /raw\.githubusercontent\.com\/moonmidas\/codex-components/);
+  assert.equal(update.status, "available");
+  assert.equal(update.latestVersion, "9.9.9");
+  assert.equal(loadUpdateCache().latestVersion, "9.9.9");
+});
+
+test("uses cached update check results for non-forced checks inside the hourly window", async () => {
+  setupDom();
+  let fetchCount = 0;
+  tweakContext.fetch = async () => {
+    fetchCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ version: "0.1.0" }),
+    };
+  };
+  const state = testState();
+
+  await checkForUpdates(state, { force: true });
+  await checkForUpdates(state, { force: false });
+
+  assert.equal(fetchCount, 1);
+});
+
+test("starts update checks on tweak startup and repeats them every hour", async () => {
+  setupDom();
+  let fetchCount = 0;
+  let intervalCallback = null;
+  let intervalDelay = 0;
+  let clearedTimer = null;
+  const originalSetInterval = tweakContext.setInterval;
+  const originalClearInterval = tweakContext.clearInterval;
+  tweakContext.fetch = async () => {
+    fetchCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ version: "0.1.1" }),
+    };
+  };
+  tweakContext.setInterval = (callback, delay) => {
+    intervalCallback = callback;
+    intervalDelay = delay;
+    return "hourly-update-timer";
+  };
+  tweakContext.clearInterval = (timer) => {
+    clearedTimer = timer;
+  };
+
+  try {
+    tweak.start({
+      log: { info() {}, warn() {} },
+      settings: {
+        registerPage() {
+          return { unregister() {} };
+        },
+        register() {
+          return { unregister() {} };
+        },
+      },
+    });
+    await tweak._state.updatePromise;
+
+    assert.equal(fetchCount, 1);
+    assert.equal(intervalDelay, 60 * 60 * 1000);
+    assert.equal(typeof intervalCallback, "function");
+
+    await intervalCallback();
+    assert.equal(fetchCount, 2);
+
+    tweak.stop();
+    assert.equal(clearedTimer, "hourly-update-timer");
+  } finally {
+    tweak.stop();
+    tweakContext.setInterval = originalSetInterval;
+    tweakContext.clearInterval = originalClearInterval;
+  }
+});
+
+test("keeps update check failures contained and visible in settings state", async () => {
+  setupDom();
+  tweakContext.fetch = async () => ({ ok: false, status: 500 });
+  const state = testState();
+
+  const update = await checkForUpdates(state, { force: true });
+
+  assert.equal(update.status, "error");
+  assert.match(update.error, /GitHub returned 500/);
+});
+
+test("settings page shows onboarding and an update action when a newer version is cached", () => {
+  setupDom("<main></main><textarea></textarea>");
+  localStorage.setItem("codexmod.components.update.v1", JSON.stringify({
+    status: "available",
+    latestVersion: "9.9.9",
+    checkedAt: Date.now(),
+  }));
+  const state = testState();
+  state.updateCheck = loadUpdateCache();
+  const root = document.querySelector("main");
+
+  renderSettingsPage(root, state);
+  findButton(root, "Update Codex Components").click();
+
+  assert.match(root.textContent, /Start Here/);
+  assert.match(root.textContent, /Update available/);
+  assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
+  assert.match(document.querySelector("textarea").value, /Latest detected version: 9\.9\.9/);
+});
+
+test("dismisses and restores the onboarding panel from settings", () => {
+  setupDom();
+  const state = testState();
+  const root = document.querySelector("main");
+
+  renderSettingsPage(root, state);
+  findButton(root, "Got it").click();
+
+  assert.equal(state.settings.onboardingDismissed, true);
+  assert.doesNotMatch(root.textContent, /Start Here/);
+
+  findButton(root, "Show onboarding").click();
+
+  assert.equal(state.settings.onboardingDismissed, false);
+  assert.match(root.textContent, /Start Here/);
+});
+
+test("update prompt tells Codex to preserve existing Codex++ settings", () => {
+  const prompt = updatePromptText("9.9.9");
+
+  assert.match(prompt, /github\.com\/moonmidas\/codex-components/);
+  assert.match(prompt, /Preserve existing Codex\+\+ settings/);
+  assert.match(prompt, /Latest detected version: 9\.9\.9/);
+});
+
+test("package, manifest, and runtime component versions stay in sync", () => {
+  const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(__dirname, "manifest.json"), "utf8"));
+  const source = readFileSync(join(__dirname, "index.js"), "utf8");
+  const runtimeVersion = /const CURRENT_VERSION = "([^"]+)"/.exec(source)?.[1];
+
+  assert.equal(packageJson.version, manifest.version);
+  assert.equal(packageJson.version, runtimeVersion);
+});
+
 test("README supported section list matches the renderer contract", () => {
   const readme = readFileSync(join(__dirname, "..", "..", "README.md"), "utf8");
   for (const section of ALL_DASHBOARD_SECTIONS) {
@@ -1037,6 +1209,12 @@ function disposeAll(state) {
   while (state.disposers.length) state.disposers.pop()();
 }
 
+function findButton(root, text) {
+  const button = Array.from(root.querySelectorAll("button")).find((candidate) => candidate.textContent === text);
+  assert.ok(button, `Expected button "${text}"`);
+  return button;
+}
+
 function loadTweakForTest(context) {
   const module = { exports: {} };
   const filename = join(__dirname, "index.js");
@@ -1050,6 +1228,8 @@ function loadTweakForTest(context) {
     URL,
     setTimeout,
     clearTimeout,
+    setInterval,
+    clearInterval,
   });
   script.runInNewContext(context);
   return module.exports;

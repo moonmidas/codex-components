@@ -1,5 +1,9 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
-const TWEAK_BUILD = "2026-05-09-youtube-link-preview-v10";
+const TWEAK_BUILD = "2026-05-10-update-checks-v1";
+const CURRENT_VERSION = "0.1.1";
+const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
+const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 module.exports = {
   start(api) {
@@ -8,6 +12,7 @@ module.exports = {
     installStyles(state);
     installRenderer(state);
     registerSettings(state);
+    startUpdateChecks(state);
     state.api.log.info(`Codex Components started (${TWEAK_BUILD})`);
   },
 
@@ -38,6 +43,11 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     hasNearbyNativeRender,
     shouldDeferToNativeRenderer,
     loadSettings,
+    renderSettingsPage,
+    compareVersions,
+    checkForUpdates,
+    updatePromptText,
+    loadUpdateCache,
   };
 }
 
@@ -55,6 +65,8 @@ function createState(api) {
     pageHandle: null,
     sectionHandle: null,
     pageRoot: null,
+    updateCheck: loadUpdateCache(),
+    updatePromise: null,
   };
 }
 
@@ -71,6 +83,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   tablePolish: false,
   autoPromptHelper: true,
   promptInjection: false,
+  onboardingDismissed: false,
   videoPreviewMigration: 2,
 });
 
@@ -117,6 +130,110 @@ function rerenderAll(state) {
   state.enhancedTables = new WeakSet();
   state.enhancedLinks = new WeakSet();
   scanDocument(state);
+}
+
+function startUpdateChecks(state) {
+  checkForUpdates(state, { force: true });
+  const timer = setInterval(() => checkForUpdates(state, { force: true }), UPDATE_CHECK_INTERVAL_MS);
+  state.disposers.push(() => clearInterval(timer));
+}
+
+function defaultUpdateCheck() {
+  return {
+    status: "idle",
+    installedVersion: CURRENT_VERSION,
+    latestVersion: "",
+    checkedAt: 0,
+    error: "",
+  };
+}
+
+function loadUpdateCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "{}");
+    if (!cached || typeof cached !== "object") return defaultUpdateCheck();
+    return { ...defaultUpdateCheck(), ...cached, installedVersion: CURRENT_VERSION };
+  } catch {
+    return defaultUpdateCheck();
+  }
+}
+
+function saveUpdateCache(updateCheck) {
+  try {
+    localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify(updateCheck));
+  } catch {
+    // Non-critical: update checks should never break rendering.
+  }
+}
+
+async function checkForUpdates(state, options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && state.updateCheck?.checkedAt && now - state.updateCheck.checkedAt < UPDATE_CHECK_INTERVAL_MS) {
+    return state.updateCheck;
+  }
+  if (state.updatePromise) return state.updatePromise;
+
+  const previous = state.updateCheck || defaultUpdateCheck();
+  state.updateCheck = { ...previous, status: "checking", installedVersion: CURRENT_VERSION, error: "" };
+  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
+
+  state.updatePromise = (async () => {
+    try {
+      if (typeof fetch !== "function") throw new Error("Fetch is unavailable in this renderer.");
+      const response = await fetch(UPDATE_MANIFEST_URL, { cache: "no-store" });
+      if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+      const manifest = await response.json();
+      const latestVersion = String(manifest?.version || "").trim();
+      if (!latestVersion) throw new Error("Remote manifest did not include a version.");
+      const comparison = compareVersions(latestVersion, CURRENT_VERSION);
+      const next = {
+        status: comparison > 0 ? "available" : "up_to_date",
+        installedVersion: CURRENT_VERSION,
+        latestVersion,
+        checkedAt: Date.now(),
+        error: "",
+      };
+      state.updateCheck = next;
+      saveUpdateCache(next);
+      return next;
+    } catch (error) {
+      const next = {
+        ...previous,
+        status: "error",
+        installedVersion: CURRENT_VERSION,
+        checkedAt: Date.now(),
+        error: error?.message || "Unable to check for updates.",
+      };
+      state.updateCheck = next;
+      saveUpdateCache(next);
+      state.api.log.warn("Codex Components update check failed", error);
+      return next;
+    } finally {
+      state.updatePromise = null;
+      if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
+    }
+  })();
+
+  return state.updatePromise;
+}
+
+function compareVersions(a, b) {
+  const left = parseVersionParts(a);
+  const right = parseVersionParts(b);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+function parseVersionParts(version) {
+  return String(version || "")
+    .split(/[.-]/)
+    .map((part) => Number.parseInt(part, 10))
+    .filter((part) => Number.isFinite(part));
 }
 
 function disposeState(state) {
@@ -1564,6 +1681,8 @@ function renderSettingsPage(root, state) {
       ]),
       el("span", { className: "codexmod-settings-pill" }, [settings.renderer ? "Active" : "Paused"]),
     ]),
+    settings.onboardingDismissed ? null : onboardingPanel(state),
+    updatePanel(state),
     settingsGroup("Rendering", [
       toggleRow(state, "renderer", "Enable renderer", "Render component blocks in chat."),
       toggleRow(state, "componentBlocks", "Legacy block renderer", "Only enable this if native Codex component rendering is unavailable."),
@@ -1579,6 +1698,105 @@ function renderSettingsPage(root, state) {
     ]),
     promptContract(settings),
   ]));
+}
+
+function onboardingPanel(state) {
+  return el("section", { className: "codexmod-settings-group codexmod-onboarding" }, [
+    el("div", { className: "codexmod-settings-group-head" }, [
+      el("div", {}, [
+        el("h3", {}, ["Start Here"]),
+        el("p", { className: "codexmod-settings-muted" }, ["Codex Components is installed. These defaults keep rich output useful without taking over the transcript."]),
+      ]),
+      button("Got it", () => dismissOnboarding(state)),
+    ]),
+    el("div", { className: "codexmod-onboarding-grid" }, [
+      onboardingStep("1", "Ask for components", "Use dashboards for structured output, intake cards for choices, and widgets only for compact custom visuals."),
+      onboardingStep("2", "Use normal links", "Leave YouTube and useful URLs as plain links outside tables so preview cards can render cleanly."),
+      onboardingStep("3", "Stay scroll-safe", "Avoid long custom row widgets. Use dashboard tables, timelines, and record cards for tall content."),
+    ]),
+    el("div", { className: "codexmod-settings-actions" }, [
+      button("Copy example prompt", () => navigator.clipboard.writeText(examplePromptText())),
+      button("Show component gallery", () => insertPrompt(componentGalleryPromptText())),
+      button("Check for updates", () => checkForUpdates(state, { force: true })),
+    ]),
+  ]);
+}
+
+function onboardingStep(number, title, body) {
+  return el("article", { className: "codexmod-onboarding-step" }, [
+    el("span", {}, [number]),
+    el("strong", {}, [title]),
+    el("p", {}, [body]),
+  ]);
+}
+
+function dismissOnboarding(state) {
+  state.settings.onboardingDismissed = true;
+  saveSettings(state);
+  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
+}
+
+function updatePanel(state) {
+  const update = state.updateCheck || defaultUpdateCheck();
+  const status = updateStatusCopy(update);
+  return el("section", { className: `codexmod-settings-group codexmod-update-panel is-${update.status}` }, [
+    el("div", { className: "codexmod-settings-group-head" }, [
+      el("div", {}, [
+        el("h3", {}, ["Updates"]),
+        el("p", { className: "codexmod-settings-muted" }, [status.body]),
+      ]),
+      el("span", { className: `codexmod-settings-pill ${status.tone}` }, [status.label]),
+    ]),
+    el("div", { className: "codexmod-update-meta" }, [
+      el("span", {}, ["Installed ", el("strong", {}, [CURRENT_VERSION])]),
+      update.latestVersion ? el("span", {}, ["Latest ", el("strong", {}, [update.latestVersion])]) : null,
+      update.checkedAt ? el("span", {}, ["Checked ", el("strong", {}, [formatCheckedAt(update.checkedAt)])]) : null,
+    ]),
+    update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
+    el("div", { className: "codexmod-settings-actions" }, [
+      update.status === "available" ? button("Update Codex Components", () => insertPrompt(updatePromptText(update.latestVersion))) : null,
+      button(update.status === "checking" ? "Checking..." : "Check again", () => checkForUpdates(state, { force: true })),
+      state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
+    ]),
+  ]);
+}
+
+function updateStatusCopy(update) {
+  if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components manifest." };
+  if (update.status === "available") return { label: "Update available", tone: "tone-amber", body: `Version ${update.latestVersion} is available on GitHub.` };
+  if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components version." };
+  if (update.status === "error") return { label: "Unable to check", tone: "tone-red", body: "Codex Components could not reach the GitHub manifest." };
+  return { label: "Not checked", tone: "tone-gray", body: "Codex Components checks on startup, every hour, and when you click Check again." };
+}
+
+function formatCheckedAt(timestamp) {
+  try {
+    return new Date(timestamp).toLocaleString();
+  } catch {
+    return "recently";
+  }
+}
+
+function showOnboarding(state) {
+  state.settings.onboardingDismissed = false;
+  saveSettings(state);
+  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
+}
+
+function examplePromptText() {
+  return "Create a Codex Components dashboard with metric_strip, insight_grid, progress_bars, timeline, table, recommendations, and action_chips sections.";
+}
+
+function componentGalleryPromptText() {
+  return "Create a Codex Components gallery that shows one example for every supported dashboard section, plus one intake card and one compact show_widget.";
+}
+
+function updatePromptText(latestVersion = "") {
+  const versionLine = latestVersion ? ` Latest detected version: ${latestVersion}.` : "";
+  return `Update Codex Components from GitHub:
+https://github.com/moonmidas/codex-components
+
+Please inspect the README and installer first, then run the macOS installer.${versionLine} Preserve existing Codex++ settings and tell me when to restart Codex++.`;
 }
 
 function settingsGroup(title, rows) {
@@ -2222,6 +2440,14 @@ function installStyles(state) {
       text-transform: uppercase;
     }
     .codexmod-settings p { margin: 0; color: var(--color-text-secondary, #b4b2a9); }
+    .codexmod-settings-group-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .codexmod-settings-group-head h3 { margin-bottom: 4px; }
     .codexmod-settings-list { display: grid; gap: 0; }
     .codexmod-settings-row {
       display: flex;
@@ -2255,7 +2481,58 @@ function installStyles(state) {
       font-size: 12px;
       white-space: nowrap;
     }
+    .codexmod-settings-pill.tone-teal { border-color: rgba(84,202,158,.38); color: #54ca9e; }
+    .codexmod-settings-pill.tone-amber { border-color: rgba(255,203,122,.4); color: #ffcb7a; }
+    .codexmod-settings-pill.tone-red { border-color: rgba(255,126,126,.4); color: #ff8d8d; }
+    .codexmod-settings-pill.tone-gray { border-color: rgba(180,178,169,.32); color: var(--color-text-secondary, #b4b2a9); }
     .codexmod-settings-muted { margin-bottom: 10px !important; font-size: 13px; }
+    .codexmod-settings-error {
+      margin-top: 8px !important;
+      color: #ff8d8d !important;
+      font-size: 13px;
+    }
+    .codexmod-onboarding-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .codexmod-onboarding-step {
+      min-width: 0;
+      border: 1px solid var(--color-border-tertiary, rgba(255,255,255,.1));
+      border-radius: 10px;
+      background: var(--color-background-secondary, rgba(255,255,255,.04));
+      padding: 12px;
+    }
+    .codexmod-onboarding-step span {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      margin-bottom: 8px;
+      border-radius: 7px;
+      background: rgba(133,183,235,.14);
+      color: #85b7eb;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .codexmod-onboarding-step strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--color-text-primary, #f1efe8);
+      font-weight: 600;
+    }
+    .codexmod-onboarding-step p { font-size: 13px; }
+    .codexmod-update-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      color: var(--color-text-secondary, #b4b2a9);
+      font-size: 13px;
+    }
+    .codexmod-update-meta strong {
+      color: var(--color-text-primary, #f1efe8);
+      font-weight: 600;
+    }
     .codexmod-settings-prompt {
       white-space: pre-wrap;
       margin: 0;
@@ -2279,6 +2556,18 @@ function installStyles(state) {
     .codexmod-settings-compact {
       padding: 0;
       gap: 0;
+    }
+    @media (max-width: 720px) {
+      .codexmod-settings-hero,
+      .codexmod-settings-group-head {
+        flex-direction: column;
+      }
+      .codexmod-onboarding-grid {
+        grid-template-columns: 1fr;
+      }
+      .codexmod-settings-actions {
+        flex-wrap: wrap;
+      }
     }
     @media (prefers-color-scheme: dark) {
       .codexmod-native-table-wrap,

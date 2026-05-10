@@ -37,6 +37,8 @@ The installer:
 - Normal Markdown table polish.
 - Native YouTube preview cards and Open Graph-style link cards outside tables.
 - A Settings page under Tweaks where each renderer can be enabled or disabled.
+- A first-run onboarding panel in Settings with copyable starter prompts.
+- Startup and hourly update checks against the GitHub manifest, with an update button when a newer version exists.
 - Automatic prompt-contract injection for tool/plugin-like prompts, with an opt-out toggle.
 - A `codex-components` skill that teaches Codex how to create component dashboards, intake cards, video previews, and clean tables.
 
@@ -105,6 +107,16 @@ Prefer `codex-component` dashboard sections for transcript output:
 - Use `intake` for choice prompts.
 
 Use `show_widget` only for compact custom visuals or real interaction that dashboard sections cannot express. Avoid long repeated row markup, nested card layouts, custom scroll containers, and large 1280px widgets except for renderer stress tests. The outer Codex Components frame owns widget scrolling.
+
+## Updates
+
+Codex Components checks for updates when the Codex++ tweak starts and then once every hour while Codex++ stays open. The live signal is the published tweak manifest:
+
+```text
+https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json
+```
+
+If that manifest reports a version newer than the installed version, the Codex Components Settings page shows an **Update Codex Components** button. The button inserts a prompt that tells Codex to inspect this repo, run the installer, preserve existing Codex++ settings, and ask you to restart Codex++ when the update is complete.
 
 ## Development
 
