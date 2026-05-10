@@ -2,7 +2,7 @@
 
 Codex Components is a Codex++ tweak that makes Codex answers easier to read when they contain structured output: dashboards, metric cards, polished tables, link cards, YouTube previews, guided intake cards, and sandboxed HTML widgets.
 
-It is built on top of [Codex++](https://github.com/b-nnett/codex-plusplus). This repo is a bootstrapper: it installs Codex++, keeps the starter tweaks, installs the Codex Components tweak, and disables Bennett's **Sidebar action grid** and **Sidebar project backgrounds** defaults.
+It is built on top of [Codex++](https://github.com/b-nnett/codex-plusplus). This repo is a bootstrapper: it installs Codex++, keeps the starter tweaks, installs the Codex Components tweak, and only changes Bennett's **Sidebar action grid** and **Sidebar project backgrounds** defaults on first-time Codex++ installs.
 
 ## Install
 
@@ -28,7 +28,7 @@ The installer:
 3. Installs the Codex++ starter tweaks.
 4. Installs the Codex Components tweak.
 5. Installs the Codex Components skill so agents can emit components without manual prompting.
-6. Disables Bennett's Sidebar action grid and Sidebar project backgrounds defaults.
+6. On first-time Codex++ installs only, disables Bennett's Sidebar action grid and Sidebar project backgrounds defaults. Existing Codex++ tweak settings are preserved.
 
 ## What It Adds
 
