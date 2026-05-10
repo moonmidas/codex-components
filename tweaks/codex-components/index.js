@@ -36,7 +36,7 @@ const { createLinkPreviewHelpers } = __codexComponentsRequire("./media/links.js"
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
-const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
+const UPDATE_MANIFEST_URL = "https://api.github.com/repos/moonmidas/codex-components/contents/tweaks/codex-components/manifest.json?ref=main";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 const updateChecks = createUpdateChecks({
@@ -52,6 +52,7 @@ const {
   compareVersions,
   defaultUpdateCheck,
   loadUpdateCache,
+  normalizeManifestResponse,
   startUpdateChecks,
   updatePromptText,
 } = updateChecks;
@@ -136,6 +137,7 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     updatePromptText,
     activeCodexPlusPlusHome,
     loadUpdateCache,
+    normalizeManifestResponse,
   };
 }
 
@@ -2103,7 +2105,7 @@ function createUpdateChecks({
         if (typeof fetch !== "function") throw new Error("Fetch is unavailable in this renderer.");
         const response = await fetch(updateManifestUrl, { cache: "no-store" });
         if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-        const manifest = await response.json();
+        const manifest = normalizeManifestResponse(await response.json());
         const latestVersion = String(manifest?.version || "").trim();
         if (!latestVersion) throw new Error("Remote manifest did not include a version.");
         const comparison = compareVersions(latestVersion, currentVersion);
@@ -2161,6 +2163,40 @@ function createUpdateChecks({
       .filter((part) => Number.isFinite(part));
   }
 
+  function normalizeManifestResponse(payload) {
+    if (payload?.version) return payload;
+    if (payload?.encoding === "base64" && typeof payload.content === "string") {
+      const json = decodeBase64(payload.content.replace(/\s/g, ""));
+      return JSON.parse(json);
+    }
+    return payload;
+  }
+
+  function decodeBase64(value) {
+    if (typeof atob === "function") return atob(value);
+    if (typeof Buffer !== "undefined") return Buffer.from(value, "base64").toString("utf8");
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    let output = "";
+    let index = 0;
+    while (index < value.length) {
+      const enc1 = chars.indexOf(value.charAt(index++));
+      const enc2 = chars.indexOf(value.charAt(index++));
+      const enc3 = chars.indexOf(value.charAt(index++));
+      const enc4 = chars.indexOf(value.charAt(index++));
+      const chr1 = (enc1 << 2) | (enc2 >> 4);
+      const chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+      const chr3 = ((enc3 & 3) << 6) | enc4;
+      output += String.fromCharCode(chr1);
+      if (enc3 !== 64) output += String.fromCharCode(chr2);
+      if (enc4 !== 64) output += String.fromCharCode(chr3);
+    }
+    try {
+      return decodeURIComponent(escape(output));
+    } catch {
+      return output;
+    }
+  }
+
   function activeCodexPlusPlusHome() {
     const tweaksDir = String(window.__codexpp_tweaks_dir__ || "").trim();
     if (!tweaksDir) return "";
@@ -2184,6 +2220,7 @@ Please inspect the README and installer first, then run the macOS installer.${ve
     compareVersions,
     defaultUpdateCheck,
     loadUpdateCache,
+    normalizeManifestResponse,
     startUpdateChecks,
     updatePromptText,
   };
@@ -2430,7 +2467,7 @@ const { createLinkPreviewHelpers } = __codexComponentsRequire("./media/links.js"
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
-const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
+const UPDATE_MANIFEST_URL = "https://api.github.com/repos/moonmidas/codex-components/contents/tweaks/codex-components/manifest.json?ref=main";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 const updateChecks = createUpdateChecks({
@@ -2446,6 +2483,7 @@ const {
   compareVersions,
   defaultUpdateCheck,
   loadUpdateCache,
+  normalizeManifestResponse,
   startUpdateChecks,
   updatePromptText,
 } = updateChecks;
@@ -2530,6 +2568,7 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     updatePromptText,
     activeCodexPlusPlusHome,
     loadUpdateCache,
+    normalizeManifestResponse,
   };
 }
 

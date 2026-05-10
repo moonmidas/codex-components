@@ -32,7 +32,7 @@ const { createLinkPreviewHelpers } = require("./media/links.js");
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
-const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
+const UPDATE_MANIFEST_URL = "https://api.github.com/repos/moonmidas/codex-components/contents/tweaks/codex-components/manifest.json?ref=main";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 const updateChecks = createUpdateChecks({
@@ -48,6 +48,7 @@ const {
   compareVersions,
   defaultUpdateCheck,
   loadUpdateCache,
+  normalizeManifestResponse,
   startUpdateChecks,
   updatePromptText,
 } = updateChecks;
@@ -132,6 +133,7 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     updatePromptText,
     activeCodexPlusPlusHome,
     loadUpdateCache,
+    normalizeManifestResponse,
   };
 }
 

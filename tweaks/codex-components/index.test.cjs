@@ -30,6 +30,7 @@ const {
   updatePromptText,
   activeCodexPlusPlusHome,
   loadUpdateCache,
+  normalizeManifestResponse,
 } = tweak.__test;
 
 test("loads shared helpers through local CommonJS modules in the tweak VM", () => {
@@ -1308,6 +1309,13 @@ test("compares semantic versions for update checks", () => {
   assert.equal(compareVersions("1.0.0-beta.2", "1.0.0-beta.1"), 1);
 });
 
+test("normalizes GitHub Contents API manifest responses", () => {
+  const encoded = Buffer.from(JSON.stringify({ version: "1.2.3" }), "utf8").toString("base64");
+
+  assert.equal(normalizeManifestResponse({ version: "1.2.4" }).version, "1.2.4");
+  assert.equal(normalizeManifestResponse({ encoding: "base64", content: encoded }).version, "1.2.3");
+});
+
 test("checks GitHub manifest and records an available update", async () => {
   setupDom();
   let requestedUrl = "";
@@ -1323,7 +1331,7 @@ test("checks GitHub manifest and records an available update", async () => {
 
   const update = await checkForUpdates(state, { force: true });
 
-  assert.match(requestedUrl, /raw\.githubusercontent\.com\/moonmidas\/codex-components/);
+  assert.match(requestedUrl, /api\.github\.com\/repos\/moonmidas\/codex-components\/contents/);
   assert.equal(update.status, "available");
   assert.equal(update.latestVersion, "9.9.9");
   assert.equal(loadUpdateCache().latestVersion, "9.9.9");
