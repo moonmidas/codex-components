@@ -362,7 +362,7 @@ test("does not hide a streaming message container that later receives more block
 });
 
 test("hides the native code fence wrapper without hiding the message container", () => {
-  const raw = "{\"type\":\"dashboard\",\"version\":1,\"title\":\"First\",\"sections\":[]}";
+  const raw = "{\"type\":\"metrics\",\"version\":1,\"title\":\"First\",\"items\":[{\"label\":\"One\",\"value\":\"1\"}]}";
   setupDom(`
     <main>
       <article data-message-author-role="assistant">
@@ -388,7 +388,7 @@ test("hides the native code fence wrapper without hiding the message container",
 });
 
 test("hides nested native code card chrome around component blocks", () => {
-  const raw = "{\"type\":\"dashboard\",\"version\":1,\"title\":\"First\",\"sections\":[]}";
+  const raw = "{\"type\":\"metrics\",\"version\":1,\"title\":\"First\",\"items\":[{\"label\":\"One\",\"value\":\"1\"}]}";
   setupDom(`
     <main>
       <article data-message-author-role="assistant">
@@ -864,7 +864,7 @@ test("does not render component fences from composer surfaces", () => {
     <main>
       <section data-testid="composer">
         <div contenteditable="true">\`\`\`codex-component
-{"type":"dashboard","version":1,"title":"Draft","sections":[{"type":"metric_strip","items":[{"label":"Draft","value":"Nope"}]}]}
+{"type":"metrics","version":1,"title":"Draft","items":[{"label":"Draft","value":"Nope"}]}
 \`\`\`</div>
       </section>
     </main>
@@ -876,18 +876,17 @@ test("does not render component fences from composer surfaces", () => {
   assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 0);
 });
 
-test("renders dashboard blocks through the local renderer by default", () => {
+test("renders metrics blocks through the local renderer by default", () => {
   setupDom(`
     <main>
-      <pre class="language-codex-component">{"type":"dashboard","version":1,"title":"Native","sections":[{"type":"metric_strip","items":[{"label":"One","value":"1"}]}]}</pre>
+      <pre class="language-codex-component">{"type":"metrics","version":1,"title":"Native","items":[{"label":"One","value":"1"}]}</pre>
     </main>
   `);
   const state = testState();
 
   scanDocument(state);
 
-  assert.equal(state.settings.componentBlocks, false);
-  assert.ok(document.querySelector(".codexmod-dashboard"));
+  assert.ok(document.querySelector(".codexmod-metric"));
 });
 
 test("renders choices blocks through the local renderer by default", () => {
@@ -900,7 +899,6 @@ test("renders choices blocks through the local renderer by default", () => {
 
   scanDocument(state);
 
-  assert.equal(state.settings.componentBlocks, false);
   assert.ok(document.querySelector(".codexmod-choices-option"));
 });
 
@@ -916,7 +914,6 @@ test("renders html blocks through the local renderer by default", () => {
 
   const frame = document.querySelector(".codexmod-html-frame");
   assert.ok(frame);
-  assert.equal(state.settings.componentBlocks, false);
   assert.equal(frame.style.pointerEvents, "none");
 });
 
@@ -957,7 +954,6 @@ test("renders html blocks through the local scroll-safe iframe by default", () =
 
   const frame = document.querySelector(".codexmod-html-frame");
   assert.ok(frame);
-  assert.equal(state.settings.componentBlocks, false);
   assert.equal(frame.style.pointerEvents, "none");
   assert.equal(document.querySelector(".codexmod-html-guard button").textContent, "Enable interaction");
 });
@@ -973,7 +969,10 @@ test("forces legacy component block rendering off even when stale settings enabl
   }));
 
   const settings = loadSettings();
-  assert.equal(settings.componentBlocks, false);
+  assert.equal(Object.hasOwn(settings, "componentBlocks"), false);
+  assert.equal(Object.hasOwn(settings, "dashboards"), false);
+  assert.equal(Object.hasOwn(settings, "intake"), false);
+  assert.equal(Object.hasOwn(settings, "htmlWidgets"), false);
   assert.equal(settings.mediaEmbeds, true);
   assert.equal(settings.linkPreviews, true);
   assert.equal(settings.promptInjection, false);
@@ -1174,6 +1173,17 @@ test("dismisses and restores the onboarding panel from settings", () => {
 
   assert.equal(state.settings.onboardingDismissed, false);
   assert.match(root.textContent, /Start Here/);
+});
+
+test("settings prompt contract advertises only v0.2 component names", () => {
+  setupDom();
+  const state = testState();
+  const root = document.querySelector("main");
+
+  renderSettingsPage(root, state);
+
+  assert.match(root.textContent, /Supported component types: group, metrics, insights/);
+  assert.doesNotMatch(root.textContent, /metric_strip|insight_grid|progress_bars|action_chips|show_widget|html_widget|intake/);
 });
 
 test("update prompt tells Codex to preserve existing Codex++ settings", () => {

@@ -94,10 +94,6 @@ const SETTINGS_KEY = "codexmod.components.settings.v1";
 
 const DEFAULT_SETTINGS = Object.freeze({
   renderer: true,
-  componentBlocks: false,
-  dashboards: true,
-  intake: true,
-  htmlWidgets: true,
   mediaEmbeds: true,
   linkPreviews: true,
   tablePolish: false,
@@ -111,9 +107,12 @@ function loadSettings() {
   try {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     const settings = { ...DEFAULT_SETTINGS, ...stored };
-    settings.componentBlocks = false;
     settings.tablePolish = false;
     settings.promptInjection = false;
+    delete settings.componentBlocks;
+    delete settings.dashboards;
+    delete settings.intake;
+    delete settings.htmlWidgets;
     if (stored.videoPreviewMigration !== 2) {
       settings.mediaEmbeds = true;
       settings.linkPreviews = true;
@@ -134,7 +133,6 @@ function saveSettings(state) {
 function setSetting(state, key, value) {
   if (key === "promptInjection") value = false;
   state.settings[key] = Boolean(value);
-  if (key !== "componentBlocks") state.settings.componentBlocks = false;
   saveSettings(state);
   rerenderAll(state);
   if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
@@ -308,8 +306,7 @@ function cleanupPromptContractLeak() {
 function scanDocument(state) {
   state.scanQueued = false;
   if (!state.settings.renderer) return;
-  if (state.settings.componentBlocks) discoverAndMountBlocks(state, () => true);
-  else discoverAndMountBlocks(state, isLocallyOwnedBlock);
+  discoverAndMountBlocks(state, isLocallyOwnedBlock);
   enhanceNativeTables(state);
   enhanceLinksAndMedia(state);
 }
@@ -646,27 +643,6 @@ function toolbar(descriptor, raw, state) {
   copy.setAttribute("title", "Copy component JSON");
   bar.append(copy);
   return bar;
-}
-
-function renderDashboard(target, descriptor, raw, state) {
-  const body = renderShell(target, descriptor, raw, state, "codexmod-dashboard");
-  for (const section of descriptor.sections || []) {
-    if (section.type === "metric_strip") renderMetricStrip(body, section);
-    else if (section.type === "insight_grid") renderInsightGrid(body, section);
-    else if (section.type === "funnel" || section.type === "bar_chart") renderBars(body, section);
-    else if (section.type === "progress_bars") renderProgressBars(body, section);
-    else if (section.type === "numbered_callouts") renderNumberedCallouts(body, section);
-    else if (section.type === "record_cards") renderRecordCards(body, section);
-    else if (section.type === "alert_blocks") renderAlertBlocks(body, section);
-    else if (section.type === "comparison_cards") renderComparisonCards(body, section);
-    else if (section.type === "timeline") renderTimeline(body, section);
-    else if (section.type === "pull_quote") renderPullQuote(body, section);
-    else if (section.type === "tag_cloud") renderTagCloud(body, section);
-    else if (section.type === "table") renderTable(body, section);
-    else if (section.type === "recommendations") renderRecommendations(body, section);
-    else if (section.type === "action_chips") renderActions(body, section);
-    else renderCallout(body, section);
-  }
 }
 
 function renderComponent(target, descriptor, raw, state, options = {}) {
@@ -1385,17 +1361,18 @@ function stripPromptContractFromText(text) {
 function shouldInjectContract(text) {
   const value = stripPromptContractFromText(text);
   if (!value.trim() || value.includes("Codex Components prompt contract")) return false;
-  return /\b(use|using|query|check|analy[sz]e|dashboard|table|graph|chart|metric|funnel|report|posthog|supabase|meta ads|gmail|drive|calendar|stripe|github|plugin|skill|mcp|tool|link|youtube|video)\b/i.test(value);
+  return /\b(use|using|query|check|analy[sz]e|component|table|graph|chart|metric|funnel|report|posthog|supabase|meta ads|gmail|drive|calendar|stripe|github|plugin|skill|mcp|tool|link|youtube|video)\b/i.test(value);
 }
 
 function componentPromptComment() {
   return `<!-- Codex Components prompt contract:
 When this answer uses tools, plugins, skills, analytics, links, tables, or structured data, prefer concise visual components over prose-only output.
-For dashboards, emit a fenced JSON block with language codex-component and type "dashboard".
-Use dashboard sections before custom HTML: metric_strip, insight_grid, funnel, bar_chart, progress_bars, timeline, table, recommendations, action_chips.
-Use show_widget only for compact diagrams, charts, mockups, art, or interactive mini-tools that cannot be expressed as dashboard sections.
-Do not use show_widget for long lists, repeated rows, tables, record grids, or nested card layouts; use dashboard table, timeline, record_cards, or insight_grid instead.
-If show_widget is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.
+Emit fenced JSON blocks with language codex-component and one component type: group, metrics, insights, funnel, bars, progress, callouts, records, alerts, comparison, timeline, quote, tags, table, recommendations, actions, choices, or html.
+Use group only when combining several components in one surface; otherwise emit the exact component needed directly.
+Use choices for selectable follow-up prompts.
+Use html only for bounded custom visuals or advanced mini-tools that cannot be expressed with declarative components.
+Do not use html for long lists, repeated rows, tables, record grids, or nested card layouts; use table, timeline, records, insights, or group instead.
+If html is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.
 Keep labels short, include one-line interpretation, and use semantic signal colors only.
 Leave YouTube/video URLs and normal URLs as plain links outside tables so Codex Components can render video previews/link cards.
 Do not place link preview cards inside tables.
@@ -1601,7 +1578,7 @@ function registerSettings(state) {
   const page = {
     id: "main",
     title: "Codex Components",
-    description: "Claude-style dashboards, media cards, link previews, and polished tables.",
+    description: "Structured Codex components, media cards, link previews, and polished tables.",
     iconSvg:
       '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
       '<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>' +
@@ -1623,7 +1600,7 @@ function registerSettings(state) {
     render(root) {
       root.innerHTML = "";
       root.append(el("div", { className: "codexmod-settings codexmod-settings-compact" }, [
-        el("p", {}, ["Rendering is ", el("strong", {}, [state.settings.renderer ? "on" : "off"]), ". Configure individual components from the sidebar tab."]),
+        el("p", {}, ["Component rendering is ", el("strong", {}, [state.settings.renderer ? "on" : "off"]), ". Configure Codex Components from the sidebar tab."]),
       ]));
     },
   });
@@ -1637,7 +1614,7 @@ function renderSettingsPage(root, state) {
     el("section", { className: "codexmod-settings-hero" }, [
       el("div", {}, [
         el("h2", {}, ["Codex Components"]),
-        el("p", {}, ["Turn raw tool output into readable dashboards, tables, media cards, and link previews."]),
+        el("p", {}, ["Turn raw tool output into readable components, tables, media cards, and link previews."]),
       ]),
       el("span", { className: "codexmod-settings-pill" }, [settings.renderer ? "Active" : "Paused"]),
     ]),
@@ -1645,10 +1622,6 @@ function renderSettingsPage(root, state) {
     updatePanel(state),
     settingsGroup("Rendering", [
       toggleRow(state, "renderer", "Enable renderer", "Render component blocks in chat."),
-      toggleRow(state, "componentBlocks", "Legacy block renderer", "Only enable this if native Codex component rendering is unavailable."),
-      toggleRow(state, "dashboards", "Dashboards", "Legacy dashboard renderer when block rendering is enabled."),
-      toggleRow(state, "intake", "Guided intake cards", "Legacy intake renderer when block rendering is enabled."),
-      toggleRow(state, "htmlWidgets", "Sandboxed HTML widgets", "Legacy widget renderer when block rendering is enabled."),
     ]),
     settingsGroup("Automatic polish", [
       toggleRow(state, "tablePolish", "Polish normal tables", "Restyle Markdown/tool tables so they read closer to Claude Cowork."),
@@ -1670,9 +1643,9 @@ function onboardingPanel(state) {
       button("Got it", () => dismissOnboarding(state)),
     ]),
     el("div", { className: "codexmod-onboarding-grid" }, [
-      onboardingStep("1", "Ask for components", "Use dashboards for structured output, intake cards for choices, and widgets only for compact custom visuals."),
+      onboardingStep("1", "Ask for components", "Use direct component types for structured output, choices for follow-up prompts, and html only for compact custom visuals."),
       onboardingStep("2", "Use normal links", "Leave YouTube and useful URLs as plain links outside tables so preview cards can render cleanly."),
-      onboardingStep("3", "Stay scroll-safe", "Avoid long custom row widgets. Use dashboard tables, timelines, and record cards for tall content."),
+      onboardingStep("3", "Stay scroll-safe", "Avoid long custom HTML rows. Use table, timeline, records, or group for tall content."),
     ]),
     el("div", { className: "codexmod-settings-actions" }, [
       button("Copy example prompt", () => navigator.clipboard.writeText(examplePromptText())),
@@ -1744,11 +1717,11 @@ function showOnboarding(state) {
 }
 
 function examplePromptText() {
-  return "Create a Codex Components dashboard with metric_strip, insight_grid, progress_bars, timeline, table, recommendations, and action_chips sections.";
+  return "Create a Codex Components group with metrics, insights, progress, timeline, table, recommendations, actions, choices, and one compact html component.";
 }
 
 function componentGalleryPromptText() {
-  return "Create a Codex Components gallery that shows one example for every supported dashboard section, plus one intake card and one compact show_widget.";
+  return "Create a Codex Components gallery with one example of every supported v0.2 component type: group, metrics, insights, funnel, bars, progress, callouts, records, alerts, comparison, timeline, quote, tags, table, recommendations, actions, choices, and html.";
 }
 
 function updatePromptText(latestVersion = "") {
@@ -1781,12 +1754,14 @@ function toggleRow(state, key, title, description) {
 
 function promptContract(settings) {
   const contract = [
-    "When tool results contain analytics, funnel, campaign, revenue, retention, table, or comparison data, prefer a codex-component dashboard instead of prose-only output.",
-    "Use a fenced JSON block with language codex-component.",
-    "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, progress_bars, numbered_callouts, record_cards, alert_blocks, comparison_cards, timeline, pull_quote, tag_cloud, table, recommendations, action_chips.",
-    "Use show_widget/codex-widget only for compact diagrams, charts, mockups, art, or interactive mini-tools that cannot be expressed as dashboard sections.",
-    "Do not use show_widget for long lists, repeated rows, tables, record grids, or nested card layouts; use dashboard table, timeline, record_cards, or insight_grid instead.",
-    "If show_widget is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.",
+    "When tool results contain analytics, funnel, campaign, revenue, retention, table, comparison data, or structured choices, prefer codex-component blocks over prose-only output.",
+    "Use fenced JSON blocks with language codex-component.",
+    "Supported component types: group, metrics, insights, funnel, bars, progress, callouts, records, alerts, comparison, timeline, quote, tags, table, recommendations, actions, choices, html.",
+    "Use group only to combine several components; otherwise emit the exact component directly.",
+    "Use choices for selectable follow-up prompts.",
+    "Use html only for bounded custom visuals or advanced mini-tools that cannot be expressed with declarative components.",
+    "Do not use html for long lists, repeated rows, tables, record grids, or nested card layouts; use table, timeline, records, insights, or group instead.",
+    "If html is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.",
     "Use concise labels, short interpretations, and color intent: blue neutral, teal good, amber warning, red problem.",
     "For video URLs, leave the URL as a normal link; Codex Components will preview it outside tables.",
     "For links with useful context, leave the URL as a normal link; Codex Components will show an Open Graph-style card outside tables.",
