@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { hasExistingCodexPlusPlusInstall, removeDuplicateComponentsTweaks } from "./install.mjs";
+import { codexPlusPlusHomes, hasExistingCodexPlusPlusInstall, removeDuplicateComponentsTweaks } from "./install.mjs";
 
 test("detects an existing Codex++ home from user tweak state", () => {
   const root = mkdtempSync(join(tmpdir(), "codex-components-install-"));
@@ -45,6 +45,25 @@ test("removes duplicate Codex Components tweak folders before install", () => {
     assert.equal(existsSync(keep), true);
     assert.equal(existsSync(duplicate), false);
     assert.equal(existsSync(unrelated), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discovers copied Codex++ homes for tweak refresh", () => {
+  const root = mkdtempSync(join(tmpdir(), "codex-components-install-"));
+  try {
+    const defaultHome = join(root, "codex-plusplus");
+    const copyHome = join(root, "codex-plusplus-copy");
+    const unrelated = join(root, "codex-plusplus-source");
+    mkdirSync(join(defaultHome, "tweaks"), { recursive: true });
+    mkdirSync(join(copyHome, "storage"), { recursive: true });
+    mkdirSync(unrelated, { recursive: true });
+
+    assert.deepEqual(
+      codexPlusPlusHomes(root, defaultHome).sort(),
+      [defaultHome, copyHome].sort(),
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

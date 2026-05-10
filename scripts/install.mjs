@@ -10,7 +10,6 @@ const root = resolve(dirname(scriptPath), "..");
 const codexPlusPlusRepo = "https://github.com/b-nnett/codex-plusplus.git";
 const sourceRoot = join(homedir(), ".codex-components", "codex-plusplus");
 const codexPlusPlusHome = process.env.CODEX_PLUSPLUS_HOME || defaultCodexPlusPlusHome();
-const tweaksDir = join(codexPlusPlusHome, "tweaks");
 const hadExistingCodexPlusPlusInstall = hasExistingCodexPlusPlusInstall(codexPlusPlusHome);
 
 if (process.argv[1] && scriptPath === resolve(process.argv[1])) {
@@ -20,8 +19,13 @@ if (process.argv[1] && scriptPath === resolve(process.argv[1])) {
 function main() {
   requirePlatform();
   ensureCodexPlusPlusSource();
-  installCodexPlusPlus();
-  installComponentsTweak();
+  try {
+    installCodexPlusPlus();
+  } catch (error) {
+    if (!hadExistingCodexPlusPlusInstall) throw error;
+    console.warn(`Codex++ app patch failed, but an existing install was found. Continuing with tweak refresh.\n${error.message}`);
+  }
+  installComponentsTweaks();
   installComponentsSkill();
   if (hadExistingCodexPlusPlusInstall) {
     console.log("Existing Codex++ install detected; preserving current tweak settings.");
@@ -59,10 +63,17 @@ function installCodexPlusPlus() {
   });
 }
 
-function installComponentsTweak() {
-  const target = join(tweaksDir, "com.codexmod.components");
-  mkdirSync(tweaksDir, { recursive: true });
-  removeDuplicateComponentsTweaks(tweaksDir, target);
+function installComponentsTweaks() {
+  for (const home of codexPlusPlusHomes()) {
+    installComponentsTweak(home);
+  }
+}
+
+function installComponentsTweak(home) {
+  const homeTweaksDir = join(home, "tweaks");
+  const target = join(homeTweaksDir, "com.codexmod.components");
+  mkdirSync(homeTweaksDir, { recursive: true });
+  removeDuplicateComponentsTweaks(homeTweaksDir, target);
   rmSync(target, { recursive: true, force: true });
   cpSync(join(root, "tweaks", "codex-components"), target, { recursive: true });
   console.log(`Installed Codex Components tweak -> ${target}`);
@@ -124,6 +135,20 @@ function defaultCodexPlusPlusHome() {
   return join(homedir(), "Library", "Application Support", "codex-plusplus");
 }
 
+function codexPlusPlusHomes(appSupport = join(homedir(), "Library", "Application Support"), primaryHome = codexPlusPlusHome) {
+  const homes = [primaryHome];
+  try {
+    for (const name of readdirSync(appSupport)) {
+      if (!name.startsWith("codex-plusplus")) continue;
+      const candidate = join(appSupport, name);
+      if (hasExistingCodexPlusPlusInstall(candidate)) homes.push(candidate);
+    }
+  } catch {
+    // Ignore inaccessible app support directories; the explicit home still applies.
+  }
+  return Array.from(new Set(homes));
+}
+
 export function hasExistingCodexPlusPlusInstall(home) {
   return (
     existsSync(join(home, "tweaks")) ||
@@ -133,7 +158,7 @@ export function hasExistingCodexPlusPlusInstall(home) {
   );
 }
 
-export { removeDuplicateComponentsTweaks };
+export { codexPlusPlusHomes, removeDuplicateComponentsTweaks };
 
 function readJson(file) {
   if (!existsSync(file)) return {};
