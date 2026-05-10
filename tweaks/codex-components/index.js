@@ -540,7 +540,7 @@ function mountBlock(state, block) {
     return;
   }
   const descriptor = result.descriptor;
-  if (hasNearbyNativeRender(sourceNode, descriptor.type)) {
+  if (shouldDeferToNativeRenderer(descriptor) && hasNearbyNativeRender(sourceNode, descriptor.type)) {
     state.mounted.add(block.node);
     state.mounted.add(sourceNode);
     return;
@@ -1043,24 +1043,6 @@ function alertIcon(tone) {
 
 function initials(text) {
   return String(text || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-}
-
-function renderIntake(target, descriptor, raw, state) {
-  const body = renderShell(target, descriptor, raw, state, "codexmod-intake");
-  const question = String(descriptor.question || "").trim();
-  const title = String(descriptor.title || "").trim();
-  if (question && question !== title) {
-    body.append(el("h2", { className: "codexmod-intake-question" }, [question]));
-  }
-  body.append(el("div", { className: "codexmod-intake-options" }, (descriptor.options || []).map((option, index) =>
-    el("button", { type: "button", className: "codexmod-intake-option", onclick: () => insertPrompt(option.prompt || option.label || "") }, [
-      el("span", {}, [String(index + 1)]),
-      el("div", { className: "codexmod-intake-option-copy" }, [
-        el("strong", {}, [option.label || option.title || `Option ${index + 1}`]),
-        option.description ? el("small", {}, [option.description]) : null,
-      ]),
-    ]),
-  )));
 }
 
 function renderChoices(target, descriptor, raw, state) {
@@ -2007,8 +1989,7 @@ function installStyles(state) {
     }
     .codexmod-component-toolbar button,
     .codexmod-actions button,
-    .codexmod-choices-option,
-    .codexmod-intake-option {
+    .codexmod-choices-option {
       border: 1px solid var(--cm-border);
       border-radius: 7px;
       background: var(--cm-panel);
@@ -2409,11 +2390,8 @@ function installStyles(state) {
     }
     .codexmod-recommendations { margin:0; padding-left: 18px; display:grid; gap:8px; }
     .codexmod-actions { display:flex; flex-wrap:wrap; gap:8px; }
-    .codexmod-intake-question { margin:0; font-size:24px; line-height:1.2; font-family: Georgia, ui-serif, serif; font-weight:500; }
-    .codexmod-choices-options,
-    .codexmod-intake-options { display:grid; gap:8px; }
-    .codexmod-choices-option,
-    .codexmod-intake-option {
+    .codexmod-choices-options { display:grid; gap:8px; }
+    .codexmod-choices-option {
       display:flex;
       align-items:center;
       gap:12px;
@@ -2421,8 +2399,7 @@ function installStyles(state) {
       text-align:left;
       background:transparent;
     }
-    .codexmod-choices-option span,
-    .codexmod-intake-option span {
+    .codexmod-choices-option span {
       display:grid;
       place-items:center;
       width:28px;
@@ -2431,14 +2408,12 @@ function installStyles(state) {
       background:color-mix(in srgb, var(--cm-panel) 62%, transparent);
       color:var(--cm-muted);
     }
-    .codexmod-choices-option-copy,
-    .codexmod-intake-option-copy {
+    .codexmod-choices-option-copy {
       display:grid;
       gap:2px;
       min-width:0;
     }
-    .codexmod-choices-option-copy small,
-    .codexmod-intake-option-copy small {
+    .codexmod-choices-option-copy small {
       color:var(--cm-muted);
       font-size:12px;
       line-height:1.35;

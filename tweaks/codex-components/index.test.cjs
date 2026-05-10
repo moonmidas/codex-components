@@ -11,8 +11,7 @@ const tweak = loadTweakForTest(tweakContext);
 const {
   createState,
   mountBlock,
-  renderDashboard,
-  renderIntake,
+  renderChoices,
   renderShowWidget,
   mountShowWidgetFrame,
   installRenderer,
@@ -161,45 +160,36 @@ test("group does not render old nested component names", () => {
   assert.match(document.querySelector(".codex-components").textContent, /Unknown component type: dashboard/);
 });
 
-test("renders intake cards and html widgets through direct renderers", () => {
-  setupDom();
-  const state = testState();
-  const intakeTarget = document.createElement("div");
-  document.body.append(intakeTarget);
-
-  renderIntake(intakeTarget, {
-    type: "intake",
-    version: 1,
-    title: "Choose",
-    options: [{ label: "Option A", prompt: "Pick A" }],
-  }, "{}", state);
-  assert.ok(document.querySelector(".codexmod-intake-option"));
-
-  mountJson(state, {
-    type: "html_widget",
-    version: 1,
-    title: "Frame",
-    html: "<div>Inside iframe</div>",
-    height: 180,
-  });
-  assert.equal(document.querySelector(".codexmod-widget-frame").style.height, "180px");
-});
-
-test("intake does not repeat the title as a second question heading", () => {
+test("renders choices through the direct renderer", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  renderIntake(target, {
-    type: "intake",
+  renderChoices(target, {
+    type: "choices",
+    version: 1,
+    title: "Choose",
+    options: [{ label: "Option A", prompt: "Pick A" }],
+  }, "{}", state);
+  assert.ok(document.querySelector(".codexmod-choices-option"));
+});
+
+test("choices does not repeat the title as a second question heading", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  renderChoices(target, {
+    type: "choices",
     version: 1,
     title: "Choose a Test Path",
     subtitle: "Pick one option to continue the component test.",
     options: [{ label: "Inspect", prompt: "Inspect" }],
   }, "{}", state);
 
-  assert.equal(document.querySelectorAll(".codexmod-intake-question").length, 0);
+  assert.equal(document.querySelectorAll(".codexmod-choices-question").length, 0);
   assert.equal(document.querySelector(".codexmod-component-title").textContent, "Choose a Test Path");
 });
 
@@ -227,10 +217,9 @@ test("html widget frames start in scroll-safe mode until interaction is enabled"
 });
 
 test("does not defer component rendering because Codex++ owns these blocks", () => {
-  assert.equal(shouldDeferToNativeRenderer({ type: "dashboard" }), false);
-  assert.equal(shouldDeferToNativeRenderer({ type: "intake" }), false);
-  assert.equal(shouldDeferToNativeRenderer({ type: "show_widget" }), false);
-  assert.equal(shouldDeferToNativeRenderer({ type: "html_widget" }), false);
+  assert.equal(shouldDeferToNativeRenderer({ type: "group" }), false);
+  assert.equal(shouldDeferToNativeRenderer({ type: "choices" }), false);
+  assert.equal(shouldDeferToNativeRenderer({ type: "html" }), false);
 });
 
 test("renders show_widget blocks through the local scroll-safe iframe", () => {
@@ -256,13 +245,13 @@ test("renders show_widget blocks through the local scroll-safe iframe", () => {
   assert.equal(source.style.display, "none");
 });
 
-test("does not render its own component when a native visual render is nearby", () => {
+test("renders choices even when a native-looking surface is nearby", () => {
   setupDom();
   const state = testState();
   const native = document.createElement("section");
   native.setAttribute("role", "group");
-  native.setAttribute("data-native-render", "intake");
-  native.innerHTML = "<h2>Native intake</h2><button>Choice</button>";
+  native.setAttribute("data-native-render", "choices");
+  native.innerHTML = "<h2>Native choices</h2><button>Choice</button>";
   const source = document.createElement("pre");
   document.body.append(native, source);
 
@@ -271,29 +260,29 @@ test("does not render its own component when a native visual render is nearby", 
     node: source,
     language: "codex-component",
     raw: JSON.stringify({
-      type: "intake",
+      type: "choices",
       version: 1,
-      title: "Guided Intake Card",
+      title: "Choices",
       options: [{ label: "One", prompt: "One" }],
     }),
     hideSource: true,
   });
 
-  assert.equal(document.querySelector("[data-codexmod-component-mount]"), null);
-  assert.equal(source.style.display, "");
+  assert.ok(document.querySelector(".codexmod-choices-option"));
+  assert.equal(source.style.display, "none");
 });
 
-test("does not render its own component when a native visual render is elsewhere in the same message", () => {
+test("renders choices when a native-looking surface is elsewhere in the same message", () => {
   setupDom(`
     <main>
       <article data-message-author-role="assistant">
-        <section role="group" data-native-render="intake" class="codex-native-intake">
-          <h2>Native intake</h2>
+        <section role="group" data-native-render="choices" class="codex-native-choices">
+          <h2>Native choices</h2>
           <button>Choice</button>
         </section>
         <p>Some streamed text between the native surface and source.</p>
         <div>
-          <pre class="language-codex-component">{"type":"intake","version":1,"title":"Guided Intake Card","options":[{"label":"One","prompt":"One"}]}</pre>
+          <pre class="language-codex-component">{"type":"choices","version":1,"title":"Choices","options":[{"label":"One","prompt":"One"}]}</pre>
         </div>
       </article>
     </main>
@@ -302,8 +291,9 @@ test("does not render its own component when a native visual render is elsewhere
 
   scanDocument(state);
 
-  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 0);
-  assert.equal(document.querySelector("pre").style.display, "");
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+  assert.ok(document.querySelector(".codexmod-choices-option"));
+  assert.equal(document.querySelector("pre").style.display, "none");
 });
 
 test("renders show_widget when the same message has an unrelated native dashboard", () => {
@@ -355,8 +345,8 @@ test("rerenders the same component JSON after Codex++ replaces the chat DOM", ()
 });
 
 test("does not hide a streaming message container that later receives more blocks", () => {
-  const firstRaw = "{\"type\":\"dashboard\",\"version\":1,\"title\":\"First\",\"sections\":[]}";
-  const secondRaw = "{\"type\":\"intake\",\"version\":1,\"title\":\"Second\",\"options\":[{\"label\":\"Go\",\"prompt\":\"Go\"}]}";
+  const firstRaw = "{\"type\":\"metrics\",\"version\":1,\"title\":\"First\",\"items\":[{\"label\":\"One\",\"value\":\"1\"}]}";
+  const secondRaw = "{\"type\":\"choices\",\"version\":1,\"title\":\"Second\",\"options\":[{\"label\":\"Go\",\"prompt\":\"Go\"}]}";
   setupDom(`
     <main>
       <article data-message-author-role="assistant">
@@ -375,7 +365,7 @@ test("does not hide a streaming message container that later receives more block
 
   assert.equal(streaming.style.display, "");
   assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 2);
-  assert.ok(document.querySelector(".codexmod-intake"));
+  assert.ok(document.querySelector(".codexmod-choices"));
 });
 
 test("hides the native code fence wrapper without hiding the message container", () => {
@@ -909,10 +899,10 @@ test("renders dashboard blocks through the local renderer by default", () => {
   assert.ok(document.querySelector(".codexmod-dashboard"));
 });
 
-test("renders intake blocks through the local renderer by default", () => {
+test("renders choices blocks through the local renderer by default", () => {
   setupDom(`
     <main>
-      <pre class="language-codex">{"type":"intake","version":1,"title":"Guided Intake Card","question":"What kind of component should Codex create next?","options":[{"label":"Analytics dashboard","prompt":"Create an analytics dashboard."}]}</pre>
+      <pre class="language-codex-component">{"type":"choices","version":1,"title":"Choose a Path","options":[{"label":"Analytics view","prompt":"Create an analytics view."}]}</pre>
     </main>
   `);
   const state = testState();
@@ -920,7 +910,7 @@ test("renders intake blocks through the local renderer by default", () => {
   scanDocument(state);
 
   assert.equal(state.settings.componentBlocks, false);
-  assert.ok(document.querySelector(".codexmod-intake-option"));
+  assert.ok(document.querySelector(".codexmod-choices-option"));
 });
 
 test("renders show_widget blocks through the local renderer by default", () => {
