@@ -52,18 +52,15 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     renderComponent,
     renderGroup,
     renderChoices,
-    renderHtmlWidget,
-    renderShowWidget,
-    mountShowWidgetFrame,
+    renderHtml,
+    mountHtmlFrame,
     enhanceNativeTables,
     enhanceLinksAndMedia,
-    buildWidgetDocument,
+    buildHtmlDocument,
     normalizeDescriptor,
     uniqueBlocks,
     scanDocument,
     installRenderer,
-    hasNearbyNativeRender,
-    shouldDeferToNativeRenderer,
     loadSettings,
     isComponentLanguage,
     renderSettingsPage,
@@ -540,11 +537,6 @@ function mountBlock(state, block) {
     return;
   }
   const descriptor = result.descriptor;
-  if (shouldDeferToNativeRenderer(descriptor) && hasNearbyNativeRender(sourceNode, descriptor.type)) {
-    state.mounted.add(block.node);
-    state.mounted.add(sourceNode);
-    return;
-  }
   state.mounted.add(block.node);
   state.mounted.add(sourceNode);
   sourceNode.dataset.codexmodComponentSource = "true";
@@ -554,11 +546,6 @@ function mountBlock(state, block) {
   mount.dataset.codexmodComponentMount = "true";
   sourceNode.after(mount);
 
-  if (shouldDeferToNativeRenderer(descriptor)) {
-    sourceNode.style.display = "";
-    mount.remove();
-    return;
-  }
   try {
     if (canRenderComponent(state, descriptor)) renderComponent(mount, descriptor, block.raw, state);
     else {
@@ -574,10 +561,6 @@ function canRenderComponent(state, descriptor) {
   return COMPONENT_TYPE_SET.has(descriptor.type);
 }
 
-function shouldDeferToNativeRenderer(descriptor) {
-  return false;
-}
-
 function isIncompleteComponentJson(raw, error) {
   const text = String(raw || "").trim();
   if (!text) return true;
@@ -585,55 +568,6 @@ function isIncompleteComponentJson(raw, error) {
   const opens = (text.match(/[\[{]/g) || []).length;
   const closes = (text.match(/[\]}]/g) || []).length;
   return opens > closes;
-}
-
-function hasNearbyNativeRender(sourceNode, expectedType = "") {
-  const normalizedType = normalizeComponentType(expectedType);
-  const ownMount = (node) => node?.matches?.("[data-codexmod-component-mount], .codex-components");
-  const nativeSurface = (node, requireType = false) => {
-    if (!node || ownMount(node)) return false;
-    if (node === sourceNode || node.contains?.(sourceNode) || sourceNode.contains?.(node)) return false;
-    if (node.matches?.("pre, code, script, style")) return false;
-    const text = (node.textContent || "").trim();
-    if (!text || text.startsWith("```")) return false;
-    const className = String(node.className || "").toLowerCase();
-    const role = String(node.getAttribute?.("role") || "").toLowerCase();
-    const data = Object.entries(node.dataset || {}).map(([key, value]) => `${key}:${value}`).join(" ").toLowerCase();
-    if (requireType && normalizedType && !surfaceMatchesComponentType(node, normalizedType, `${className} ${data}`)) return false;
-    const looksComponentish =
-      /component|widget|artifact|intake|dashboard/.test(className)
-      || /component|widget|artifact|intake|dashboard/.test(data)
-      || ["region", "group"].includes(role);
-    const looksLikeCard =
-      node.querySelector?.("button, iframe, table, h1, h2, h3, h4, strong")
-      && node.getBoundingClientRect?.().height !== 0;
-    return Boolean(looksComponentish || looksLikeCard);
-  };
-
-  const candidates = [
-    sourceNode.previousElementSibling,
-    sourceNode.nextElementSibling,
-    sourceNode.parentElement?.previousElementSibling,
-    sourceNode.parentElement?.nextElementSibling,
-  ];
-  if (candidates.some((node) => nativeSurface(node, true))) return true;
-
-  const message = sourceNode.closest?.("[data-message-author-role], article, [role='article']");
-  if (!message) return false;
-  return Array.from(message.querySelectorAll("section, div, article, [role='group'], [role='region']"))
-    .some((node) => nativeSurface(node, true));
-}
-
-function normalizeComponentType(type) {
-  const normalized = String(type || "").toLowerCase().replace(/-/g, "_");
-  if (normalized === "html_widget") return "widget";
-  if (normalized === "show_widget") return "widget";
-  return normalized;
-}
-
-function surfaceMatchesComponentType(node, normalizedType, searchableText) {
-  if (normalizedType === "widget") return /widget|html_widget|show_widget/.test(searchableText) || Boolean(node.querySelector?.("iframe"));
-  return new RegExp(`(^|[^a-z])${escapeRegExp(normalizedType)}([^a-z]|$)`).test(searchableText);
 }
 
 function findCodeBlockShell(node, raw, language) {
@@ -689,10 +623,6 @@ function hasOwnCodeBlockChrome(parent, rawStart, language) {
   });
 }
 
-function escapeRegExp(text) {
-  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function renderShell(target, descriptor, raw, state, className) {
   target.innerHTML = "";
   const shell = el("section", { className: `codexmod-component ${className}` });
@@ -742,6 +672,7 @@ function renderDashboard(target, descriptor, raw, state) {
 function renderComponent(target, descriptor, raw, state, options = {}) {
   if (descriptor.type === "group") return renderGroup(target, descriptor, raw, state, options);
   if (descriptor.type === "choices") return renderChoices(target, descriptor, raw, state, options);
+  if (descriptor.type === "html") return renderHtml(target, descriptor, raw, state, options);
   return renderLeafComponent(target, descriptor, raw, state, options);
 }
 
@@ -1059,51 +990,26 @@ function renderChoices(target, descriptor, raw, state) {
   )));
 }
 
-function renderHtmlWidget(target, descriptor, raw, state) {
-  const body = renderShell(target, descriptor, raw, state, "codexmod-widget");
-  const frame = document.createElement("iframe");
-  const bounds = widgetFrameBounds(descriptor, 360);
-  frame.className = "codexmod-widget-frame";
-  frame.setAttribute("sandbox", "allow-scripts");
-  frame.setAttribute("scrolling", "yes");
-  frame.srcdoc = descriptor.html || descriptor.content || "";
-  mountWidgetScrollbox(body, frame, bounds, state);
-  attachFrameInteractionGuard(body, frame);
-  const onMessage = (event) => {
-    if (event.source !== frame.contentWindow) return;
-    const data = event.data || {};
-    if (data.method === "ui/notifications/size-changed" && data.params?.height) {
-      applyWidgetFrameHeight(frame, bounds, data.params.height);
-    } else if (data.method === "codex/scroll-parent" && data.params?.deltaY) {
-      scrollNearestContainer(frame, Number(data.params.deltaY) || 0);
-    }
-  };
-  window.addEventListener("message", onMessage);
-  state.disposers.push(() => window.removeEventListener("message", onMessage));
+function renderHtml(target, descriptor, raw, state) {
+  const body = renderShell(target, descriptor, raw, state, "codexmod-html");
+  mountHtmlFrame(body, descriptor, state);
 }
 
-function renderShowWidget(target, descriptor, raw, state) {
-  target.innerHTML = "";
-  const body = el("section", { className: "codexmod-show-widget-body" });
-  target.append(body);
-  mountShowWidgetFrame(body, descriptor, state);
-}
-
-function mountShowWidgetFrame(body, descriptor, state) {
+function mountHtmlFrame(body, descriptor, state) {
   body.innerHTML = "";
   const frame = document.createElement("iframe");
-  const bounds = widgetFrameBounds(descriptor, 520);
-  frame.className = "codexmod-widget-frame codexmod-show-widget-frame";
+  const bounds = htmlFrameBounds(descriptor, 520);
+  frame.className = "codexmod-html-frame";
   frame.setAttribute("sandbox", "allow-scripts");
   frame.setAttribute("scrolling", "yes");
-  frame.srcdoc = buildWidgetDocument(descriptor.widget_code || descriptor.html || descriptor.content || "");
-  mountWidgetScrollbox(body, frame, bounds, state);
+  frame.srcdoc = buildHtmlDocument(descriptor.code || "");
+  mountHtmlScrollbox(body, frame, bounds, state);
   attachFrameInteractionGuard(body, frame);
   const onMessage = (event) => {
     if (event.source !== frame.contentWindow) return;
     const data = event.data || {};
     if (data.method === "ui/notifications/size-changed" && data.params?.height) {
-      applyWidgetFrameHeight(frame, bounds, data.params.height);
+      applyHtmlFrameHeight(frame, bounds, data.params.height);
     } else if (data.method === "codex/send-prompt" && data.params?.text) {
       insertPrompt(String(data.params.text));
     } else if (data.method === "codex/open-link" && data.params?.url) {
@@ -1116,8 +1022,8 @@ function mountShowWidgetFrame(body, descriptor, state) {
   state.disposers.push(() => window.removeEventListener("message", onMessage));
 }
 
-function mountWidgetScrollbox(body, frame, bounds, state) {
-  const scrollbox = el("div", { className: "codexmod-widget-scrollbox" });
+function mountHtmlScrollbox(body, frame, bounds, state) {
+  const scrollbox = el("div", { className: "codexmod-html-scrollbox" });
   scrollbox.style.height = `${bounds.initial}px`;
   scrollbox.style.overflowY = "auto";
   scrollbox.style.overflowX = "hidden";
@@ -1125,19 +1031,19 @@ function mountWidgetScrollbox(body, frame, bounds, state) {
   frame.style.height = `${bounds.initial}px`;
   scrollbox.append(frame);
   body.append(scrollbox);
-  installWidgetScrollAssist(scrollbox, frame, state);
+  installHtmlScrollAssist(scrollbox, frame, state);
   return scrollbox;
 }
 
-function installWidgetScrollAssist(scrollbox, frame, state) {
+function installHtmlScrollAssist(scrollbox, frame, state) {
   const onWheel = (event) => {
     if (frame.dataset.codexmodInteraction === "on") return;
-    scrollWidgetFrame(scrollbox, event);
+    scrollHtmlFrame(scrollbox, event);
   };
   const onDocumentWheel = (event) => {
     if (frame.dataset.codexmodInteraction === "on") return;
     if (!isPointerInside(event, scrollbox)) return;
-    scrollWidgetFrame(scrollbox, event);
+    scrollHtmlFrame(scrollbox, event);
   };
   scrollbox.addEventListener("wheel", onWheel, { passive: false });
   document.addEventListener("wheel", onDocumentWheel, { passive: false, capture: true });
@@ -1147,7 +1053,7 @@ function installWidgetScrollAssist(scrollbox, frame, state) {
   });
 }
 
-function scrollWidgetFrame(scrollbox, event) {
+function scrollHtmlFrame(scrollbox, event) {
   if (!scrollElementBy(scrollbox, Number(event.deltaY) || 0)) return false;
   event.preventDefault?.();
   event.stopPropagation?.();
@@ -1163,7 +1069,7 @@ function isPointerInside(event, node) {
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
-function widgetFrameBounds(descriptor, fallbackHeight) {
+function htmlFrameBounds(descriptor, fallbackHeight) {
   const requested = positiveNumber(descriptor.height) || fallbackHeight;
   const explicitMax = positiveNumber(descriptor.max_height);
   const max = explicitMax || Math.min(Math.max(requested, 360), 720);
@@ -1176,18 +1082,18 @@ function positiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
-function applyWidgetFrameHeight(frame, bounds, measuredHeight) {
+function applyHtmlFrameHeight(frame, bounds, measuredHeight) {
   const measured = positiveNumber(measuredHeight);
   const contentHeight = Math.max(bounds.min, measured || bounds.min);
   const viewportHeight = Math.min(bounds.max, contentHeight);
-  const scrollbox = frame.closest?.(".codexmod-widget-scrollbox");
+  const scrollbox = frame.closest?.(".codexmod-html-scrollbox");
   frame.style.height = `${contentHeight}px`;
   if (scrollbox) {
     scrollbox.style.height = `${viewportHeight}px`;
-    scrollbox.classList.toggle("codexmod-widget-scrollbox-scrollable", contentHeight > bounds.max);
+    scrollbox.classList.toggle("codexmod-html-scrollbox-scrollable", contentHeight > bounds.max);
   } else {
     frame.style.height = `${viewportHeight}px`;
-    frame.classList.toggle("codexmod-widget-frame-scrollable", contentHeight > bounds.max);
+    frame.classList.toggle("codexmod-html-frame-scrollable", contentHeight > bounds.max);
   }
 }
 
@@ -1202,7 +1108,7 @@ function scrollNearestContainer(node, deltaY) {
 
 function isScrollableContainer(node) {
   if (!node) return false;
-  if (node.classList?.contains("codexmod-widget-scrollbox")) return node.scrollHeight > node.clientHeight;
+  if (node.classList?.contains("codexmod-html-scrollbox")) return node.scrollHeight > node.clientHeight;
   const style = getComputedStyle(node);
   return /(auto|scroll|overlay)/.test(style.overflowY || "") && node.scrollHeight > node.clientHeight;
 }
@@ -1228,17 +1134,17 @@ function attachFrameInteractionGuard(container, frame, label = "Scroll-safe mode
     frame.style.pointerEvents = active ? "none" : "auto";
     toggle.textContent = active ? "Enable interaction" : "Disable interaction";
   });
-  const guard = el("div", { className: "codexmod-widget-guard" }, [
+  const guard = el("div", { className: "codexmod-html-guard" }, [
     el("span", {}, [label]),
     toggle,
   ]);
-  const anchor = frame.closest?.(".codexmod-widget-scrollbox") || frame;
+  const anchor = frame.closest?.(".codexmod-html-scrollbox") || frame;
   container.insertBefore(guard, anchor);
 }
 
-function buildWidgetDocument(widgetCode) {
-  const code = sanitizeWidgetCode(widgetCode);
-  const tokens = widgetTokenStyle();
+function buildHtmlDocument(componentCode) {
+  const code = sanitizeHtmlCode(componentCode);
+  const tokens = htmlTokenStyle();
   const svgMode = code.trimStart().toLowerCase().startsWith("<svg");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>${tokens}
 html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary);font:inherit;overflow:hidden;}
@@ -1282,14 +1188,14 @@ a{color:inherit}
 </script></body></html>`;
 }
 
-function sanitizeWidgetCode(widgetCode) {
-  return String(widgetCode || "")
+function sanitizeHtmlCode(componentCode) {
+  return String(componentCode || "")
     .replace(/<script\b([^>]*)\bsrc=(["'])(?!https:\/\/(?:cdnjs\.cloudflare\.com|esm\.sh|cdn\.jsdelivr\.net|unpkg\.com)\/)[\s\S]*?<\/script>/gi, "")
     .replace(/\blocalStorage\b/g, "undefined")
     .replace(/\bsessionStorage\b/g, "undefined");
 }
 
-function widgetTokenStyle() {
+function htmlTokenStyle() {
   const computed = getComputedStyle(document.documentElement);
   const names = [
     "--color-background-primary",
@@ -2418,8 +2324,8 @@ function installStyles(state) {
       font-size:12px;
       line-height:1.35;
     }
-    .codexmod-widget-frame { width:100%; border:0; background:transparent; display:block; }
-    .codexmod-widget-scrollbox {
+    .codexmod-html-frame { width:100%; border:0; background:transparent; display:block; }
+    .codexmod-html-scrollbox {
       width: 100%;
       max-width: 100%;
       overflow-y: auto;
@@ -2427,10 +2333,10 @@ function installStyles(state) {
       overscroll-behavior: contain;
       background: transparent;
     }
-    .codexmod-widget-scrollbox iframe {
+    .codexmod-html-scrollbox iframe {
       min-width: 100%;
     }
-    .codexmod-widget-guard {
+    .codexmod-html-guard {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -2443,7 +2349,7 @@ function installStyles(state) {
       color: var(--cm-muted);
       font-size: 12px;
     }
-    .codexmod-widget-guard button {
+    .codexmod-html-guard button {
       border: 0;
       border-radius: 0;
       background: transparent;
@@ -2453,21 +2359,10 @@ function installStyles(state) {
       font-size: 12px;
       cursor: pointer;
     }
-    .codexmod-widget-guard button:hover,
-    .codexmod-widget-guard button:focus-visible {
+    .codexmod-html-guard button:hover,
+    .codexmod-html-guard button:focus-visible {
       color: var(--cm-text);
       text-decoration: underline;
-    }
-    .codexmod-show-widget-body {
-      max-width: 100%;
-      margin: 12px 0;
-      background: transparent;
-    }
-    .codexmod-show-widget-frame {
-      width: 100%;
-      border: 0;
-      background: transparent;
-      overflow: hidden;
     }
     .codexmod-error { padding: 14px; color: var(--cm-red); }
     .codexmod-settings {

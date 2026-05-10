@@ -12,17 +12,15 @@ const {
   createState,
   mountBlock,
   renderChoices,
-  renderShowWidget,
-  mountShowWidgetFrame,
+  renderHtml,
+  mountHtmlFrame,
   installRenderer,
   enhanceNativeTables,
   enhanceLinksAndMedia,
-  buildWidgetDocument,
+  buildHtmlDocument,
   normalizeDescriptor,
   uniqueBlocks,
   scanDocument,
-  hasNearbyNativeRender,
-  shouldDeferToNativeRenderer,
   loadSettings,
   isComponentLanguage,
   renderSettingsPage,
@@ -193,20 +191,20 @@ test("choices does not repeat the title as a second question heading", () => {
   assert.equal(document.querySelector(".codexmod-component-title").textContent, "Choose a Test Path");
 });
 
-test("html widget frames start in scroll-safe mode until interaction is enabled", () => {
+test("html frames start in scroll-safe mode until interaction is enabled", () => {
   setupDom();
   const state = testState();
 
   mountJson(state, {
-    type: "html_widget",
+    type: "html",
     version: 1,
     title: "Frame",
-    html: "<button>Inside iframe</button>",
+    code: "<button>Inside iframe</button>",
     height: 180,
   });
 
-  const frame = document.querySelector(".codexmod-widget-frame");
-  const toggle = document.querySelector(".codexmod-widget-guard button");
+  const frame = document.querySelector(".codexmod-html-frame");
+  const toggle = document.querySelector(".codexmod-html-guard button");
   assert.equal(frame.style.pointerEvents, "none");
   assert.equal(toggle.textContent, "Enable interaction");
 
@@ -216,13 +214,7 @@ test("html widget frames start in scroll-safe mode until interaction is enabled"
   assert.equal(toggle.textContent, "Disable interaction");
 });
 
-test("does not defer component rendering because Codex++ owns these blocks", () => {
-  assert.equal(shouldDeferToNativeRenderer({ type: "group" }), false);
-  assert.equal(shouldDeferToNativeRenderer({ type: "choices" }), false);
-  assert.equal(shouldDeferToNativeRenderer({ type: "html" }), false);
-});
-
-test("renders show_widget blocks through the local scroll-safe iframe", () => {
+test("renders html blocks through the local scroll-safe iframe", () => {
   setupDom();
   const state = testState();
   const source = document.createElement("pre");
@@ -230,18 +222,20 @@ test("renders show_widget blocks through the local scroll-safe iframe", () => {
 
   mountBlock(state, {
     node: source,
-    language: "show_widget",
+    language: "codex-component",
     raw: JSON.stringify({
+      type: "html",
+      version: 1,
       title: "Native",
-      widget_code: "<div>Native widget</div>",
+      code: "<div>Native HTML</div>",
     }),
     hideSource: true,
   });
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const frame = document.querySelector(".codexmod-html-frame");
   assert.ok(frame);
   assert.equal(frame.style.pointerEvents, "none");
-  assert.equal(document.querySelector(".codexmod-widget-guard button").textContent, "Enable interaction");
+  assert.equal(document.querySelector(".codexmod-html-guard button").textContent, "Enable interaction");
   assert.equal(source.style.display, "none");
 });
 
@@ -255,7 +249,6 @@ test("renders choices even when a native-looking surface is nearby", () => {
   const source = document.createElement("pre");
   document.body.append(native, source);
 
-  assert.equal(hasNearbyNativeRender(source), true);
   mountBlock(state, {
     node: source,
     language: "codex-component",
@@ -296,15 +289,15 @@ test("renders choices when a native-looking surface is elsewhere in the same mes
   assert.equal(document.querySelector("pre").style.display, "none");
 });
 
-test("renders show_widget when the same message has an unrelated native dashboard", () => {
+test("renders html when the same message has an unrelated native-looking surface", () => {
   setupDom(`
     <main>
       <article data-message-author-role="assistant">
-        <section role="group" data-native-render="dashboard" class="codex-native-dashboard">
-          <h2>Native dashboard</h2>
+        <section role="group" data-native-render="metrics" class="codex-native-metrics">
+          <h2>Native metrics</h2>
           <strong>42</strong>
         </section>
-        <pre class="language-show_widget">{"title":"Widget","loading_messages":["Rendering..."],"widget_code":"<button>Inside iframe</button>"}</pre>
+        <pre class="language-codex-component">{"type":"html","version":1,"title":"HTML","code":"<button>Inside iframe</button>"}</pre>
       </article>
     </main>
   `);
@@ -312,13 +305,13 @@ test("renders show_widget when the same message has an unrelated native dashboar
 
   scanDocument(state);
 
-  assert.ok(document.querySelector(".codexmod-show-widget-frame"));
+  assert.ok(document.querySelector(".codexmod-html-frame"));
 });
 
 test("does not mount the same source node twice across rescans", () => {
   setupDom(`
     <main>
-      <pre class="language-codex-component">{"type":"html_widget","version":1,"title":"Choose","html":"<div>One widget</div>"}</pre>
+      <pre class="language-codex-component">{"type":"html","version":1,"title":"Choose","code":"<div>One HTML component</div>"}</pre>
     </main>
   `);
   const state = testState();
@@ -330,7 +323,7 @@ test("does not mount the same source node twice across rescans", () => {
 });
 
 test("rerenders the same component JSON after Codex++ replaces the chat DOM", () => {
-  const raw = "{\"type\":\"html_widget\",\"version\":1,\"title\":\"Choose\",\"html\":\"<div>One widget</div>\"}";
+  const raw = "{\"type\":\"html\",\"version\":1,\"title\":\"Choose\",\"code\":\"<div>One HTML component</div>\"}";
   setupDom(`<main><pre class="language-codex-component">${raw}</pre></main>`);
   const state = testState();
 
@@ -426,31 +419,31 @@ test("hides nested native code card chrome around component blocks", () => {
   assert.equal(card.nextElementSibling?.dataset.codexmodComponentMount, "true");
 });
 
-test("show_widget has a scroll-safe default frame height", () => {
+test("html has a scroll-safe default frame height", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
-    widget_code: "<section><h1>Widget</h1><button>One</button><button>Two</button></section>",
+    code: "<section><h1>HTML</h1><button>One</button><button>Two</button></section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
-  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  const frame = document.querySelector(".codexmod-html-frame");
+  const scrollbox = document.querySelector(".codexmod-html-scrollbox");
   assert.equal(frame.style.height, "520px");
   assert.equal(scrollbox.style.height, "520px");
   assert.equal(frame.getAttribute("scrolling"), "yes");
   assert.equal(frame.style.pointerEvents, "none");
-  assert.equal(document.querySelector(".codexmod-widget-guard button").textContent, "Enable interaction");
+  assert.equal(document.querySelector(".codexmod-html-guard button").textContent, "Enable interaction");
   assert.match(frame.srcdoc, /overflow:hidden/);
   assert.match(frame.srcdoc, /typeof ResizeObserver === "function"/);
   assert.match(frame.srcdoc, /setInterval/);
 });
 
-test("show_widget renders its iframe immediately instead of swapping a lazy placeholder", () => {
+test("html renders its iframe immediately instead of swapping a lazy placeholder", () => {
   setupDom();
   global.IntersectionObserver = class {
     observe() {}
@@ -462,31 +455,30 @@ test("show_widget renders its iframe immediately instead of swapping a lazy plac
   const target = document.createElement("div");
   document.body.append(target);
 
-  renderShowWidget(target, {
-    type: "show_widget",
+  renderHtml(target, {
+    type: "html",
     version: 1,
-    loading_messages: ["Rendering..."],
-    widget_code: "<section>Immediate widget</section>",
+    code: "<section>Immediate HTML</section>",
   }, "{}", state);
 
-  assert.ok(document.querySelector(".codexmod-show-widget-frame"));
-  assert.equal(document.querySelector(".codexmod-widget-loading"), null);
+  assert.ok(document.querySelector(".codexmod-html-frame"));
+  assert.equal(document.querySelector(".codexmod-html-loading"), null);
 });
 
-test("show_widget does not shrink below its default height after resize messages", () => {
+test("html does not shrink below its default height after resize messages", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
-    widget_code: "<section>Short report</section>",
+    code: "<section>Short report</section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
-  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  const frame = document.querySelector(".codexmod-html-frame");
+  const scrollbox = document.querySelector(".codexmod-html-scrollbox");
   window.dispatchEvent(new window.MessageEvent("message", {
     source: frame.contentWindow,
     data: { method: "ui/notifications/size-changed", params: { height: 90 } },
@@ -496,21 +488,21 @@ test("show_widget does not shrink below its default height after resize messages
   assert.equal(scrollbox.style.height, "520px");
 });
 
-test("show_widget caps oversized content in a parent scrollbox", () => {
+test("html caps oversized content in a parent scrollbox", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
     height: 1280,
-    widget_code: "<section>Tall gallery</section>",
+    code: "<section>Tall gallery</section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
-  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  const frame = document.querySelector(".codexmod-html-frame");
+  const scrollbox = document.querySelector(".codexmod-html-scrollbox");
   assert.equal(frame.style.height, "720px");
   assert.equal(scrollbox.style.height, "720px");
 
@@ -521,10 +513,10 @@ test("show_widget caps oversized content in a parent scrollbox", () => {
 
   assert.equal(frame.style.height, "1600px");
   assert.equal(scrollbox.style.height, "720px");
-  assert.ok(scrollbox.classList.contains("codexmod-widget-scrollbox-scrollable"));
+  assert.ok(scrollbox.classList.contains("codexmod-html-scrollbox-scrollable"));
 });
 
-test("show_widget forwards edge wheel events to the nearest scroll parent", () => {
+test("html forwards edge wheel events to the nearest scroll parent", () => {
   setupDom("<main><section class=\"scroll-host\"><div id=\"target\"></div></section></main>");
   const host = document.querySelector(".scroll-host");
   Object.defineProperties(host, {
@@ -535,13 +527,13 @@ test("show_widget forwards edge wheel events to the nearest scroll parent", () =
   const state = testState();
   const target = document.querySelector("#target");
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
-    widget_code: "<section>Scrollable widget</section>",
+    code: "<section>Scrollable HTML</section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const frame = document.querySelector(".codexmod-html-frame");
   window.dispatchEvent(new window.MessageEvent("message", {
     source: frame.contentWindow,
     data: { method: "codex/scroll-parent", params: { deltaY: 96 } },
@@ -551,40 +543,40 @@ test("show_widget forwards edge wheel events to the nearest scroll parent", () =
   assert.match(frame.srcdoc, /codex\/scroll-parent/);
 });
 
-test("show_widget iframe wheel handler delegates all wheel deltas to the parent scrollbox", () => {
+test("html iframe wheel handler delegates all wheel deltas to the parent scrollbox", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
     height: 1280,
-    widget_code: "<section>Scrollable widget</section>",
+    code: "<section>Scrollable HTML</section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const frame = document.querySelector(".codexmod-html-frame");
   assert.match(frame.srcdoc, /event\.preventDefault\(\)/);
   assert.match(frame.srcdoc, /passive: false/);
   assert.doesNotMatch(frame.srcdoc, /atTop|atBottom/);
 });
 
-test("show_widget forwarded wheel deltas move the parent scrollbox up and down", () => {
+test("html forwarded wheel deltas move the parent scrollbox up and down", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
     height: 1280,
-    widget_code: "<section>Scrollable widget</section>",
+    code: "<section>Scrollable HTML</section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
-  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  const frame = document.querySelector(".codexmod-html-frame");
+  const scrollbox = document.querySelector(".codexmod-html-scrollbox");
   Object.defineProperties(scrollbox, {
     scrollHeight: { value: 1600, configurable: true },
     clientHeight: { value: 720, configurable: true },
@@ -603,21 +595,21 @@ test("show_widget forwarded wheel deltas move the parent scrollbox up and down",
   assert.equal(scrollbox.scrollTop, 320);
 });
 
-test("show_widget scroll-safe mode scrolls the parent scrollbox under the pointer", () => {
+test("html scroll-safe mode scrolls the parent scrollbox under the pointer", () => {
   setupDom();
   const state = testState();
   const target = document.createElement("div");
   document.body.append(target);
 
-  mountShowWidgetFrame(target, {
-    type: "show_widget",
+  mountHtmlFrame(target, {
+    type: "html",
     version: 1,
     height: 1280,
-    widget_code: "<section>Tall gallery</section>",
+    code: "<section>Tall gallery</section>",
   }, state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
-  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  const frame = document.querySelector(".codexmod-html-frame");
+  const scrollbox = document.querySelector(".codexmod-html-scrollbox");
   Object.defineProperties(scrollbox, {
     scrollHeight: { value: 1600, configurable: true },
     clientHeight: { value: 720, configurable: true },
@@ -838,14 +830,14 @@ test("does not duplicate YouTube cards after renderer state is recreated", () =>
   assert.equal(document.querySelectorAll(".codexmod-video-card").length, 1);
 });
 
-test("normalizes show_widget descriptors and sanitizes disallowed widget APIs", () => {
+test("normalizes html descriptors and sanitizes disallowed browser APIs", () => {
   setupDom();
-  const normalized = normalizeDescriptor(JSON.stringify({ title: "Demo", widget_code: "<div>Hi</div>" }), "show_widget");
+  const normalized = normalizeDescriptor(JSON.stringify({ type: "html", version: 1, code: "<div>Hi</div>" }), "codex-component");
   assert.equal(normalized.ok, true);
-  assert.equal(normalized.descriptor.type, "show_widget");
+  assert.equal(normalized.descriptor.type, "html");
   assert.equal(normalized.descriptor.version, 1);
 
-  const html = buildWidgetDocument(`
+  const html = buildHtmlDocument(`
     <script src="https://evil.example/app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <button onclick="localStorage.setItem('x','y');sessionStorage.clear()">Go</button>
@@ -857,15 +849,14 @@ test("normalizes show_widget descriptors and sanitizes disallowed widget APIs", 
 });
 
 test("deduplicates identical component blocks discovered through multiple DOM paths", () => {
-  const raw = JSON.stringify({ type: "show_widget", version: 1, widget_code: "<div>Hi</div>" });
+  const raw = JSON.stringify({ type: "html", version: 1, code: "<div>Hi</div>" });
   const blocks = uniqueBlocks([
-    { language: "show_widget", raw },
-    { language: "show_widget", raw },
+    { language: "codex-component", raw },
     { language: "codex-component", raw },
   ]);
 
-  assert.equal(blocks.length, 2);
-  assert.deepEqual(blocks.map((block) => block.language), ["show_widget", "codex-component"]);
+  assert.equal(blocks.length, 1);
+  assert.deepEqual(blocks.map((block) => block.language), ["codex-component"]);
 });
 
 test("does not render component fences from composer surfaces", () => {
@@ -913,26 +904,26 @@ test("renders choices blocks through the local renderer by default", () => {
   assert.ok(document.querySelector(".codexmod-choices-option"));
 });
 
-test("renders show_widget blocks through the local renderer by default", () => {
+test("renders html blocks through the local renderer by default", () => {
   setupDom(`
     <main>
-      <pre class="language-show_widget">{"title":"Widget","loading_messages":["Rendering..."],"widget_code":"<button>Inside iframe</button>"}</pre>
+      <pre class="language-codex-component">{"type":"html","version":1,"title":"HTML","code":"<button>Inside iframe</button>"}</pre>
     </main>
   `);
   const state = testState();
 
   scanDocument(state);
 
-  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const frame = document.querySelector(".codexmod-html-frame");
   assert.ok(frame);
   assert.equal(state.settings.componentBlocks, false);
   assert.equal(frame.style.pointerEvents, "none");
 });
 
-test("does not mount incomplete streaming codex-widget JSON and retries when complete", () => {
+test("does not mount incomplete streaming html JSON and retries when complete", () => {
   setupDom(`
     <main>
-      <pre class="language-codex-widget">{"type":"html_widget","version":1,"title":"Widget","html":"&lt;button&gt;Inside</pre>
+      <pre class="language-codex-component">{"type":"html","version":1,"title":"HTML","code":"&lt;button&gt;Inside</pre>
     </main>
   `);
   const state = testState();
@@ -944,31 +935,31 @@ test("does not mount incomplete streaming codex-widget JSON and retries when com
   assert.equal(source.style.display, "");
 
   source.textContent = JSON.stringify({
-    type: "html_widget",
+    type: "html",
     version: 1,
-    title: "Widget",
-    html: "<button>Inside iframe</button>",
+    title: "HTML",
+    code: "<button>Inside iframe</button>",
   });
   scanDocument(state);
 
-  assert.ok(document.querySelector(".codexmod-widget-frame"));
+  assert.ok(document.querySelector(".codexmod-html-frame"));
 });
 
-test("renders codex-widget blocks through the local scroll-safe iframe by default", () => {
+test("renders html blocks through the local scroll-safe iframe by default", () => {
   setupDom(`
     <main>
-      <pre class="language-codex-widget">{"type":"html_widget","version":1,"title":"Local","height":180,"html":"<button>Inside iframe</button>"}</pre>
+      <pre class="language-codex-component">{"type":"html","version":1,"title":"Local","height":180,"code":"<button>Inside iframe</button>"}</pre>
     </main>
   `);
   const state = testState();
 
   scanDocument(state);
 
-  const frame = document.querySelector(".codexmod-widget-frame");
+  const frame = document.querySelector(".codexmod-html-frame");
   assert.ok(frame);
   assert.equal(state.settings.componentBlocks, false);
   assert.equal(frame.style.pointerEvents, "none");
-  assert.equal(document.querySelector(".codexmod-widget-guard button").textContent, "Enable interaction");
+  assert.equal(document.querySelector(".codexmod-html-guard button").textContent, "Enable interaction");
 });
 
 test("forces legacy component block rendering off even when stale settings enabled it", () => {
@@ -1246,9 +1237,7 @@ function setupDom(html = "<main></main>") {
   global.InputEvent = dom.window.InputEvent;
   global.MutationObserver = dom.window.MutationObserver;
   global.IntersectionObserver = class {
-    observe(node) {
-      node.__codexmodRenderWidget?.();
-    }
+    observe() {}
     unobserve() {}
     disconnect() {}
   };
