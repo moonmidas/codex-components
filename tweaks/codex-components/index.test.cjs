@@ -33,14 +33,14 @@ const {
   loadUpdateCache,
 } = tweak.__test;
 
-const ALL_DASHBOARD_SECTIONS = [
+const DECLARATIVE_COMPONENT_CASES = [
   {
-    type: "metric_strip",
+    type: "metrics",
     items: [{ label: "Revenue", value: "$42K", delta: "12%", trend: "up", sparkline: [1, 3, 2, 5] }],
     expected: ".codexmod-metric",
   },
   {
-    type: "insight_grid",
+    type: "insights",
     items: [{ title: "Signal", body: "The offer is clear." }],
     expected: ".codexmod-insight",
   },
@@ -50,32 +50,32 @@ const ALL_DASHBOARD_SECTIONS = [
     expected: ".codexmod-bar-row",
   },
   {
-    type: "bar_chart",
+    type: "bars",
     items: [{ label: "A", value: 8 }, { label: "B", value: 4 }],
     expected: ".codexmod-bar-row",
   },
   {
-    type: "progress_bars",
+    type: "progress",
     items: [{ label: "Done", percent: 72, body: "Almost there." }],
     expected: ".codexmod-progress",
   },
   {
-    type: "numbered_callouts",
+    type: "callouts",
     items: [{ rank: 1, value: "High", title: "Risk", body: "Needs review.", recommendation: "Fix first." }],
     expected: ".codexmod-numbered",
   },
   {
-    type: "record_cards",
+    type: "records",
     items: [{ title: "Ada Lovelace", subtitle: "Lead", fields: [{ label: "Status", value: "Active" }], pills: ["VIP"] }],
     expected: ".codexmod-record",
   },
   {
-    type: "alert_blocks",
+    type: "alerts",
     items: [{ title: "Warning", body: "Watch this.", tone: "amber" }],
     expected: ".codexmod-alert",
   },
   {
-    type: "comparison_cards",
+    type: "comparison",
     items: [{ title: "Pro", value: "$20", body: "Best fit.", features: ["Fast"], featured: true }],
     expected: ".codexmod-comparison",
   },
@@ -85,13 +85,13 @@ const ALL_DASHBOARD_SECTIONS = [
     expected: ".codexmod-timeline-item",
   },
   {
-    type: "pull_quote",
+    type: "quote",
     quote: "This is the line.",
     source: "Tester",
     expected: ".codexmod-pullquote",
   },
   {
-    type: "tag_cloud",
+    type: "tags",
     items: ["analytics", { label: "sales", tone: "teal" }],
     expected: ".codexmod-tag-cloud .codexmod-pill",
   },
@@ -107,28 +107,21 @@ const ALL_DASHBOARD_SECTIONS = [
     expected: ".codexmod-recommendations li",
   },
   {
-    type: "action_chips",
+    type: "actions",
     items: [{ label: "Continue", prompt: "Continue with the next step." }],
     expected: ".codexmod-actions button",
   },
 ];
 
-test("renders every dashboard section type", () => {
-  for (const section of ALL_DASHBOARD_SECTIONS) {
+test("renders every declarative component type directly", () => {
+  for (const component of DECLARATIVE_COMPONENT_CASES) {
     setupDom();
     const state = testState();
-    const target = document.createElement("div");
-    document.body.append(target);
-    const descriptor = {
-      type: "dashboard",
-      version: 1,
-      title: "Smoke Dashboard",
-      sections: [section],
-    };
+    const descriptor = { version: 1, title: "Smoke Component", ...component };
 
-    renderDashboard(target, descriptor, JSON.stringify(descriptor), state);
+    mountJson(state, descriptor);
 
-    assert.ok(document.querySelector(section.expected), `${section.type} did not render ${section.expected}`);
+    assert.ok(document.querySelector(component.expected), `${component.type} did not render ${component.expected}`);
   }
 });
 

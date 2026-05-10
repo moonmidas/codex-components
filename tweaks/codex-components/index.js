@@ -50,6 +50,7 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     createState,
     mountBlock,
     renderDashboard,
+    renderComponent,
     renderIntake,
     renderHtmlWidget,
     renderShowWidget,
@@ -559,18 +560,18 @@ function mountBlock(state, block) {
     return;
   }
   try {
-    if (descriptor.type === "dashboard" && state.settings.dashboards) renderDashboard(mount, descriptor, block.raw, state);
-    else if (descriptor.type === "intake" && state.settings.intake) renderIntake(mount, descriptor, block.raw, state);
-    else if (descriptor.type === "html_widget" && state.settings.htmlWidgets) renderHtmlWidget(mount, descriptor, block.raw, state);
-    else if (descriptor.type === "show_widget" && state.settings.htmlWidgets) renderShowWidget(mount, descriptor, block.raw, state);
-    else if (["dashboard", "intake", "html_widget", "show_widget"].includes(descriptor.type)) {
+    if (canRenderComponent(state, descriptor)) renderComponent(mount, descriptor, block.raw, state);
+    else {
       sourceNode.style.display = "";
       mount.remove();
     }
-    else renderError(mount, `Unknown component type: ${descriptor.type}`, block.raw);
   } catch (error) {
     renderError(mount, error.message || String(error), block.raw);
   }
+}
+
+function canRenderComponent(state, descriptor) {
+  return COMPONENT_TYPE_SET.has(descriptor.type);
 }
 
 function shouldDeferToNativeRenderer(descriptor) {
@@ -736,6 +737,30 @@ function renderDashboard(target, descriptor, raw, state) {
     else if (section.type === "action_chips") renderActions(body, section);
     else renderCallout(body, section);
   }
+}
+
+function renderComponent(target, descriptor, raw, state, options = {}) {
+  return renderLeafComponent(target, descriptor, raw, state, options);
+}
+
+function renderLeafComponent(target, descriptor, raw, state, options = {}) {
+  const body = options.body || renderShell(target, descriptor, raw, state, `codexmod-${descriptor.type}`);
+  const section = descriptor;
+  if (descriptor.type === "metrics") renderMetricStrip(body, section);
+  else if (descriptor.type === "insights") renderInsightGrid(body, section);
+  else if (descriptor.type === "funnel" || descriptor.type === "bars") renderBars(body, section);
+  else if (descriptor.type === "progress") renderProgressBars(body, section);
+  else if (descriptor.type === "callouts") renderNumberedCallouts(body, section);
+  else if (descriptor.type === "records") renderRecordCards(body, section);
+  else if (descriptor.type === "alerts") renderAlertBlocks(body, section);
+  else if (descriptor.type === "comparison") renderComparisonCards(body, section);
+  else if (descriptor.type === "timeline") renderTimeline(body, section);
+  else if (descriptor.type === "quote") renderPullQuote(body, section);
+  else if (descriptor.type === "tags") renderTagCloud(body, section);
+  else if (descriptor.type === "table") renderTable(body, section);
+  else if (descriptor.type === "recommendations") renderRecommendations(body, section);
+  else if (descriptor.type === "actions") renderActions(body, section);
+  else renderCallout(body, { body: `Unsupported component: ${descriptor.type}` });
 }
 
 function renderMetricStrip(body, section) {
