@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
-const { join } = require("node:path");
+const { dirname, join, resolve } = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { JSDOM } = require("jsdom");
@@ -30,6 +30,17 @@ const {
   activeCodexPlusPlusHome,
   loadUpdateCache,
 } = tweak.__test;
+
+test("loads shared helpers through local CommonJS modules in the tweak VM", () => {
+  setupDom();
+
+  const div = tweak.__test.el("div", { className: "local-module-proof" }, ["Loaded"]);
+  const normalized = normalizeDescriptor(JSON.stringify({ type: "metrics", version: 1 }), "codex-component");
+
+  assert.equal(div.outerHTML, '<div class="local-module-proof">Loaded</div>');
+  assert.equal(normalized.ok, true);
+  assert.equal(tweak.__test.COMPONENT_TYPES.includes("html"), true);
+});
 
 const DECLARATIVE_COMPONENT_CASES = [
   {
@@ -1369,13 +1380,16 @@ function findButton(root, text) {
 }
 
 function loadTweakForTest(context) {
-  const module = { exports: {} };
   const filename = join(__dirname, "index.js");
+  const cache = new Map();
+  const localRequire = createVmRequire(context, cache, dirname(filename));
+  const module = { exports: {} };
   const source = readFileSync(filename, "utf8");
   const script = new vm.Script(source, { filename });
   Object.assign(context, {
     module,
     exports: module.exports,
+    require: localRequire,
     process,
     console,
     URL,
@@ -1385,5 +1399,35 @@ function loadTweakForTest(context) {
     clearInterval,
   });
   script.runInNewContext(context);
+  return module.exports;
+}
+
+function createVmRequire(context, cache, baseDir) {
+  return (specifier) => {
+    if (!specifier.startsWith(".")) return require(specifier);
+    const filename = resolve(baseDir, specifier);
+    return loadVmCommonJsModule(context, cache, filename);
+  };
+}
+
+function loadVmCommonJsModule(context, cache, filename) {
+  if (cache.has(filename)) return cache.get(filename).exports;
+  const module = { exports: {} };
+  cache.set(filename, module);
+  const moduleContext = Object.create(context);
+  Object.assign(moduleContext, {
+    module,
+    exports: module.exports,
+    require: createVmRequire(context, cache, dirname(filename)),
+    __filename: filename,
+    __dirname: dirname(filename),
+  });
+  const source = readFileSync(filename, "utf8");
+  const wrapped = new vm.Script(
+    `(function (exports, require, module, __filename, __dirname) {\n${source}\n})`,
+    { filename },
+  );
+  const factory = wrapped.runInNewContext(moduleContext);
+  factory(module.exports, moduleContext.require, module, filename, dirname(filename));
   return module.exports;
 }
