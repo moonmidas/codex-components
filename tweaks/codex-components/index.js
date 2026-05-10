@@ -34,7 +34,7 @@ const { createUpdateChecks } = __codexComponentsRequire("./core/update-checks.js
 const { createLinkPreviewHelpers } = __codexComponentsRequire("./media/links.js");
 
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
-const CURRENT_VERSION = "0.2.0";
+const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -1944,7 +1944,7 @@ function createSettings({
       ]),
       update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
       el("div", { className: "codexmod-settings-actions" }, [
-        update.status === "available" ? button("Update Codex Components", () => insertPrompt(updatePromptText(update.latestVersion, codexPlusPlusHome))) : null,
+        update.status === "available" || update.status === "error" ? button("Update from GitHub", () => insertPrompt(updatePromptText(update.latestVersion, codexPlusPlusHome))) : null,
         button(update.status === "checking" ? "Checking..." : "Refresh from GitHub", () => checkForUpdates(state, { force: true })),
         state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
       ]),
@@ -1955,7 +1955,7 @@ function createSettings({
     if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components manifest." };
     if (update.status === "available") return { label: "Update available", tone: "tone-amber", body: `Version ${update.latestVersion} is available on GitHub.` };
     if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components version." };
-    if (update.status === "error") return { label: "Unable to check", tone: "tone-red", body: "Codex Components could not reach the GitHub manifest." };
+    if (update.status === "error") return { label: "Manual update", tone: "tone-amber", body: "Codex++ could not check GitHub directly from this renderer. Use the updater prompt to refresh from GitHub." };
     return { label: "Not checked", tone: "tone-gray", body: "Codex Components checks on startup, every hour, and when you click Check again." };
   }
 
@@ -2428,7 +2428,7 @@ const { createUpdateChecks } = __codexComponentsRequire("./core/update-checks.js
 const { createLinkPreviewHelpers } = __codexComponentsRequire("./media/links.js");
 
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
-const CURRENT_VERSION = "0.2.0";
+const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;

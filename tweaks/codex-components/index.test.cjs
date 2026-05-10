@@ -1425,13 +1425,32 @@ test("settings page shows onboarding and an update action when a newer version i
   const root = document.querySelector("main");
 
   renderSettingsPage(root, state);
-  findButton(root, "Update Codex Components").click();
+  findButton(root, "Update from GitHub").click();
 
   assert.match(root.textContent, /Start Here/);
   assert.match(root.textContent, /Update available/);
   assert.match(root.textContent, /codex-plusplus-copy/);
   assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
   assert.match(document.querySelector("textarea").value, /Latest detected version: 9\.9\.9/);
+  assert.match(document.querySelector("textarea").value, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
+});
+
+test("settings page offers the agentic updater when renderer GitHub fetch fails", async () => {
+  setupDom("<main></main><textarea></textarea>");
+  window.__codexpp_tweaks_dir__ = "/Users/moonmidas/Library/Application Support/codex-plusplus-copy/tweaks";
+  tweakContext.fetch = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  const state = testState();
+  const root = document.querySelector("main");
+
+  renderSettingsPage(root, state);
+  await checkForUpdates(state, { force: true });
+  findButton(root, "Update from GitHub").click();
+
+  assert.match(root.textContent, /Manual update/);
+  assert.match(root.textContent, /Codex\+\+ could not check GitHub directly/);
+  assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
   assert.match(document.querySelector("textarea").value, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
 });
 

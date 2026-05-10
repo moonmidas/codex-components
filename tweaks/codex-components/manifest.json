@@ -1,7 +1,7 @@
 {
   "id": "com.codexmod.components",
   "name": "Codex Components",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "githubRepo": "moonmidas/codex-components",
   "description": "Structured Codex Components, media previews, and polished tables inside Codex chat.",
   "author": {
