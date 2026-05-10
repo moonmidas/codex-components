@@ -242,10 +242,55 @@ test("group does not render old nested component names", () => {
     type: "group",
     version: 1,
     title: "Invalid",
-    components: [{ type: "dashboard", version: 1, sections: [] }],
+    components: [{ type: "intake", version: 1, sections: [] }],
   });
 
-  assert.match(document.querySelector(".codex-components").textContent, /Unknown component type: dashboard/);
+  assert.match(document.querySelector(".codex-components").textContent, /Unknown component type: intake/);
+});
+
+test("renders legacy dashboard payloads through the v0.2 component adapter", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "dashboard",
+    version: 1,
+    title: "Serenity Links por Quiz",
+    subtitle: "El Librero de Gutenberg",
+    sections: [
+      {
+        type: "metric_strip",
+        metrics: [
+          { label: "Posts con links", value: "60" },
+          { label: "Clicks ajustados", value: "2,579" },
+        ],
+      },
+      {
+        type: "table",
+        title: "Updated By Quiz",
+        columns: ["Quiz", "Posts", "Clicks ajustados"],
+        rows: [["Ansiedad", "10", "582"]],
+      },
+      {
+        type: "bar_chart",
+        title: "Distribución de clicks ajustados",
+        x: ["Ansiedad", "Estancamiento"],
+        y: [582, 533],
+      },
+      {
+        type: "numbered_callouts",
+        title: "Top first-email people",
+        items: [{ title: "Pasado + Trauma", value: "9 first-email people" }],
+      },
+    ],
+  });
+
+  const root = document.querySelector(".codex-components");
+  assert.equal(document.querySelector(".codexmod-component-title").textContent, "Serenity Links por Quiz");
+  assert.match(root.textContent, /Clicks ajustados/);
+  assert.match(root.textContent, /Ansiedad/);
+  assert.match(root.textContent, /9 first-email people/);
+  assert.equal(document.querySelectorAll(".codexmod-error").length, 0);
 });
 
 test("renders choices through the direct renderer", () => {
@@ -1138,9 +1183,9 @@ test("recognizes only the v0.2 component schema", () => {
   }
 });
 
-test("rejects pre-reset component type names instead of aliasing them", () => {
+test("rejects unsupported pre-reset component type names instead of aliasing them", () => {
   setupDom();
-  const oldTypes = ["dashboard", "intake", "html_widget", "show_widget"];
+  const oldTypes = ["intake", "html_widget", "show_widget"];
 
   for (const type of oldTypes) {
     const result = normalizeDescriptor(JSON.stringify({ type, version: 1 }), "codex-component");
