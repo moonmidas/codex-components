@@ -6,8 +6,7 @@ function createUpdateChecks({
   getRenderSettingsPage,
 }) {
   function startUpdateChecks(state) {
-    checkForUpdates(state, { force: true });
-    const timer = setInterval(() => checkForUpdates(state, { force: true }), updateCheckIntervalMs);
+    const timer = setInterval(() => checkForUpdates(state, { force: false }), updateCheckIntervalMs);
     state.disposers.push(() => clearInterval(timer));
   }
 
@@ -73,10 +72,10 @@ function createUpdateChecks({
       } catch (error) {
         const next = {
           ...previous,
-          status: "error",
+          status: "manual",
           installedVersion: currentVersion,
           checkedAt: Date.now(),
-          error: error?.message || "Unable to check for updates.",
+          error: "",
         };
         state.updateCheck = next;
         saveUpdateCache(next);

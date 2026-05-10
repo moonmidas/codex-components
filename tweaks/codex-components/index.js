@@ -1907,7 +1907,6 @@ function createSettings({
       el("div", { className: "codexmod-settings-actions" }, [
         button("Copy example prompt", () => navigator.clipboard.writeText(examplePromptText())),
         button("Show component gallery", () => insertPrompt(componentGalleryPromptText())),
-        button("Check for updates", () => checkForUpdates(state, { force: true })),
       ]),
     ]);
   }
@@ -1946,8 +1945,7 @@ function createSettings({
       ]),
       update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
       el("div", { className: "codexmod-settings-actions" }, [
-        update.status === "available" || update.status === "error" ? button("Update from GitHub", () => insertPrompt(updatePromptText(update.latestVersion, codexPlusPlusHome))) : null,
-        button(update.status === "checking" ? "Checking..." : "Refresh from GitHub", () => checkForUpdates(state, { force: true })),
+        button("Update from GitHub", () => insertPrompt(updatePromptText(state.updateCheck?.latestVersion, codexPlusPlusHome))),
         state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
       ]),
     ]);
@@ -1957,8 +1955,8 @@ function createSettings({
     if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components manifest." };
     if (update.status === "available") return { label: "Update available", tone: "tone-amber", body: `Version ${update.latestVersion} is available on GitHub.` };
     if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components version." };
-    if (update.status === "error") return { label: "Manual update", tone: "tone-amber", body: "Codex++ could not check GitHub directly from this renderer. Use the updater prompt to refresh from GitHub." };
-    return { label: "Not checked", tone: "tone-gray", body: "Codex Components checks on startup, every hour, and when you click Check again." };
+    if (update.status === "manual") return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest version." };
+    return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest version." };
   }
 
   function formatCheckedAt(timestamp) {
@@ -2055,8 +2053,7 @@ function createUpdateChecks({
   getRenderSettingsPage,
 }) {
   function startUpdateChecks(state) {
-    checkForUpdates(state, { force: true });
-    const timer = setInterval(() => checkForUpdates(state, { force: true }), updateCheckIntervalMs);
+    const timer = setInterval(() => checkForUpdates(state, { force: false }), updateCheckIntervalMs);
     state.disposers.push(() => clearInterval(timer));
   }
 
@@ -2122,10 +2119,10 @@ function createUpdateChecks({
       } catch (error) {
         const next = {
           ...previous,
-          status: "error",
+          status: "manual",
           installedVersion: currentVersion,
           checkedAt: Date.now(),
-          error: error?.message || "Unable to check for updates.",
+          error: "",
         };
         state.updateCheck = next;
         saveUpdateCache(next);

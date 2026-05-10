@@ -1355,7 +1355,7 @@ test("uses cached update check results for non-forced checks inside the hourly w
   assert.equal(fetchCount, 1);
 });
 
-test("starts update checks on tweak startup and repeats them every hour", async () => {
+test("schedules update checks without fetching on startup", async () => {
   setupDom();
   let fetchCount = 0;
   let intervalCallback = null;
@@ -1391,14 +1391,13 @@ test("starts update checks on tweak startup and repeats them every hour", async 
         },
       },
     });
-    await tweak._state.updatePromise;
-
-    assert.equal(fetchCount, 1);
+    assert.equal(tweak._state.updatePromise, null);
+    assert.equal(fetchCount, 0);
     assert.equal(intervalDelay, 60 * 60 * 1000);
     assert.equal(typeof intervalCallback, "function");
 
     await intervalCallback();
-    assert.equal(fetchCount, 2);
+    assert.equal(fetchCount, 1);
 
     tweak.stop();
     assert.equal(clearedTimer, "hourly-update-timer");
@@ -1409,15 +1408,15 @@ test("starts update checks on tweak startup and repeats them every hour", async 
   }
 });
 
-test("keeps update check failures contained and visible in settings state", async () => {
+test("keeps update check failures contained as manual updater state", async () => {
   setupDom();
   tweakContext.fetch = async () => ({ ok: false, status: 500 });
   const state = testState();
 
   const update = await checkForUpdates(state, { force: true });
 
-  assert.equal(update.status, "error");
-  assert.match(update.error, /GitHub returned 500/);
+  assert.equal(update.status, "manual");
+  assert.equal(update.error, "");
 });
 
 test("settings page shows onboarding and an update action when a newer version is cached", () => {
@@ -1443,7 +1442,7 @@ test("settings page shows onboarding and an update action when a newer version i
   assert.match(document.querySelector("textarea").value, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
 });
 
-test("settings page offers the agentic updater when renderer GitHub fetch fails", async () => {
+test("settings page stays simple when renderer GitHub fetch fails", async () => {
   setupDom("<main></main><textarea></textarea>");
   window.__codexpp_tweaks_dir__ = "/Users/moonmidas/Library/Application Support/codex-plusplus-copy/tweaks";
   tweakContext.fetch = async () => {
@@ -1456,14 +1455,16 @@ test("settings page offers the agentic updater when renderer GitHub fetch fails"
   await checkForUpdates(state, { force: true });
   findButton(root, "Update from GitHub").click();
 
-  assert.match(root.textContent, /Manual update/);
-  assert.match(root.textContent, /Codex\+\+ could not check GitHub directly/);
+  assert.match(root.textContent, /Ready/);
+  assert.doesNotMatch(root.textContent, /Failed to fetch/);
+  assert.doesNotMatch(root.textContent, /Agentic/);
+  assert.doesNotMatch(root.textContent, /Retry version check/);
   assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
   assert.match(document.querySelector("textarea").value, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
 });
 
-test("settings page can manually refresh update state from GitHub", async () => {
-  setupDom("<main></main>");
+test("settings page inserts update prompt from the primary update action", async () => {
+  setupDom("<main></main><textarea></textarea>");
   tweakContext.fetch = async () => ({
     ok: true,
     json: async () => ({ version: "9.9.9" }),
@@ -1472,11 +1473,9 @@ test("settings page can manually refresh update state from GitHub", async () => 
   const root = document.querySelector("main");
 
   renderSettingsPage(root, state);
-  findButton(root, "Refresh from GitHub").click();
-  await state.updatePromise;
+  findButton(root, "Update from GitHub").click();
 
-  assert.match(root.textContent, /Update available/);
-  assert.match(root.textContent, /Latest 9\.9\.9/);
+  assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
 });
 
 test("dismisses and restores the onboarding panel from settings", () => {
