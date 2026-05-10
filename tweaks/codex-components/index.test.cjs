@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
-const { join } = require("node:path");
+const { dirname, join, resolve } = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { JSDOM } = require("jsdom");
@@ -1373,11 +1373,13 @@ function loadTweakForTest(context) {
   const filename = join(__dirname, "index.js");
   const source = readFileSync(filename, "utf8");
   const script = new vm.Script(source, { filename });
+  const vmRequire = createVmRequire(context, filename);
   Object.assign(context, {
     module,
     exports: module.exports,
     process,
     console,
+    require: vmRequire,
     URL,
     setTimeout,
     clearTimeout,
@@ -1386,4 +1388,21 @@ function loadTweakForTest(context) {
   });
   script.runInNewContext(context);
   return module.exports;
+}
+
+function createVmRequire(context, fromFilename, cache = new Map()) {
+  return function vmRequire(request) {
+    if (!request.startsWith(".")) return require(request);
+    const resolved = resolve(dirname(fromFilename), request);
+    const filename = resolved.endsWith(".js") ? resolved : `${resolved}.js`;
+    if (cache.has(filename)) return cache.get(filename).exports;
+
+    const module = { exports: {} };
+    cache.set(filename, module);
+    const source = readFileSync(filename, "utf8");
+    const wrapped = new vm.Script(`(function (module, exports, require) {\n${source}\n})`, { filename });
+    const localRequire = createVmRequire(context, filename, cache);
+    wrapped.runInNewContext(context)(module, module.exports, localRequire);
+    return module.exports;
+  };
 }

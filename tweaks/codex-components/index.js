@@ -1,4 +1,8 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
+const { createSettings } = require("./core/settings.js");
+const { createUpdateChecks } = require("./core/update-checks.js");
+const { createLinkPreviewHelpers } = require("./media/links.js");
+
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.0";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
@@ -25,6 +29,52 @@ const COMPONENT_TYPES = Object.freeze([
   "html",
 ]);
 const COMPONENT_TYPE_SET = new Set(COMPONENT_TYPES);
+
+const updateChecks = createUpdateChecks({
+  currentVersion: CURRENT_VERSION,
+  updateCacheKey: UPDATE_CACHE_KEY,
+  updateManifestUrl: UPDATE_MANIFEST_URL,
+  updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS,
+  getRenderSettingsPage: () => renderSettingsPage,
+});
+const {
+  activeCodexPlusPlusHome,
+  checkForUpdates,
+  compareVersions,
+  defaultUpdateCheck,
+  loadUpdateCache,
+  startUpdateChecks,
+  updatePromptText,
+} = updateChecks;
+
+const settingsUi = createSettings({
+  activeCodexPlusPlusHome,
+  button,
+  checkForUpdates,
+  componentPromptComment,
+  currentVersion: CURRENT_VERSION,
+  defaultUpdateCheck,
+  el,
+  insertPrompt,
+  rerenderAll,
+  updatePromptText,
+});
+const {
+  loadSettings,
+  registerSettings,
+  renderSettingsPage,
+  saveSettings,
+  setSetting,
+} = settingsUi;
+
+const mediaPreviews = createLinkPreviewHelpers({ el, isComposerSurface });
+const {
+  cleanupVideoCards,
+  enhanceLinksAndMedia,
+  parseYouTubeUrl,
+  renderLinkPreview,
+  renderYouTubeEmbed,
+} = mediaPreviews;
 
 module.exports = {
   start(api) {
@@ -91,54 +141,6 @@ function createState(api) {
   };
 }
 
-const SETTINGS_KEY = "codexmod.components.settings.v1";
-
-const DEFAULT_SETTINGS = Object.freeze({
-  renderer: true,
-  mediaEmbeds: true,
-  linkPreviews: true,
-  tablePolish: false,
-  autoPromptHelper: true,
-  promptInjection: false,
-  onboardingDismissed: false,
-  videoPreviewMigration: 2,
-});
-
-function loadSettings() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    const settings = { ...DEFAULT_SETTINGS, ...stored };
-    settings.tablePolish = false;
-    settings.promptInjection = false;
-    delete settings.componentBlocks;
-    delete settings.dashboards;
-    delete settings.intake;
-    delete settings.htmlWidgets;
-    if (stored.videoPreviewMigration !== 2) {
-      settings.mediaEmbeds = true;
-      settings.linkPreviews = true;
-      settings.promptInjection = false;
-      settings.videoPreviewMigration = 2;
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    }
-    return settings;
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-function saveSettings(state) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
-}
-
-function setSetting(state, key, value) {
-  if (key === "promptInjection") value = false;
-  state.settings[key] = Boolean(value);
-  saveSettings(state);
-  rerenderAll(state);
-  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
-}
-
 function rerenderAll(state) {
   document.querySelectorAll("[data-codexmod-component-mount]").forEach((node) => node.remove());
   document.querySelectorAll("[data-codexmod-component-source='true']").forEach((node) => {
@@ -149,110 +151,6 @@ function rerenderAll(state) {
   state.enhancedTables = new WeakSet();
   state.enhancedLinks = new WeakSet();
   scanDocument(state);
-}
-
-function startUpdateChecks(state) {
-  checkForUpdates(state, { force: true });
-  const timer = setInterval(() => checkForUpdates(state, { force: true }), UPDATE_CHECK_INTERVAL_MS);
-  state.disposers.push(() => clearInterval(timer));
-}
-
-function defaultUpdateCheck() {
-  return {
-    status: "idle",
-    installedVersion: CURRENT_VERSION,
-    latestVersion: "",
-    checkedAt: 0,
-    error: "",
-  };
-}
-
-function loadUpdateCache() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "{}");
-    if (!cached || typeof cached !== "object") return defaultUpdateCheck();
-    return { ...defaultUpdateCheck(), ...cached, installedVersion: CURRENT_VERSION };
-  } catch {
-    return defaultUpdateCheck();
-  }
-}
-
-function saveUpdateCache(updateCheck) {
-  try {
-    localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify(updateCheck));
-  } catch {
-    // Non-critical: update checks should never break rendering.
-  }
-}
-
-async function checkForUpdates(state, options = {}) {
-  const force = Boolean(options.force);
-  const now = Date.now();
-  if (!force && state.updateCheck?.checkedAt && now - state.updateCheck.checkedAt < UPDATE_CHECK_INTERVAL_MS) {
-    return state.updateCheck;
-  }
-  if (state.updatePromise) return state.updatePromise;
-
-  const previous = state.updateCheck || defaultUpdateCheck();
-  state.updateCheck = { ...previous, status: "checking", installedVersion: CURRENT_VERSION, error: "" };
-  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
-
-  state.updatePromise = (async () => {
-    try {
-      if (typeof fetch !== "function") throw new Error("Fetch is unavailable in this renderer.");
-      const response = await fetch(UPDATE_MANIFEST_URL, { cache: "no-store" });
-      if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-      const manifest = await response.json();
-      const latestVersion = String(manifest?.version || "").trim();
-      if (!latestVersion) throw new Error("Remote manifest did not include a version.");
-      const comparison = compareVersions(latestVersion, CURRENT_VERSION);
-      const next = {
-        status: comparison > 0 ? "available" : "up_to_date",
-        installedVersion: CURRENT_VERSION,
-        latestVersion,
-        checkedAt: Date.now(),
-        error: "",
-      };
-      state.updateCheck = next;
-      saveUpdateCache(next);
-      return next;
-    } catch (error) {
-      const next = {
-        ...previous,
-        status: "error",
-        installedVersion: CURRENT_VERSION,
-        checkedAt: Date.now(),
-        error: error?.message || "Unable to check for updates.",
-      };
-      state.updateCheck = next;
-      saveUpdateCache(next);
-      state.api.log.warn("Codex Components update check failed", error);
-      return next;
-    } finally {
-      state.updatePromise = null;
-      if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
-    }
-  })();
-
-  return state.updatePromise;
-}
-
-function compareVersions(a, b) {
-  const left = parseVersionParts(a);
-  const right = parseVersionParts(b);
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (left[index] || 0) - (right[index] || 0);
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  return 0;
-}
-
-function parseVersionParts(version) {
-  return String(version || "")
-    .split(/[.-]/)
-    .map((part) => Number.parseInt(part, 10))
-    .filter((part) => Number.isFinite(part));
 }
 
 function disposeState(state) {
@@ -1266,30 +1164,6 @@ function enhanceNativeTables(state) {
   });
 }
 
-function enhanceLinksAndMedia(state) {
-  if (!state.settings.mediaEmbeds && !state.settings.linkPreviews) return;
-  cleanupVideoCards();
-  document.querySelectorAll("a[href]").forEach((link) => {
-    if (
-      state.enhancedLinks.has(link)
-      || link.dataset?.codexmodLinkEnhanced === "true"
-      || link.closest?.(".codex-components, .codexmod-settings, .codexmod-link-card, table")
-      || isComposerSurface(link)
-    ) return;
-    const href = link.href;
-    const youtube = parseYouTubeUrl(href);
-    if (youtube && state.settings.mediaEmbeds) {
-      insertAfterLink(link, renderYouTubeEmbed(youtube, href, link.textContent || href), { hideStandaloneLink: true });
-      state.enhancedLinks.add(link);
-      return;
-    }
-    if (state.settings.linkPreviews && isPreviewableHttpUrl(href)) {
-      insertAfterLink(link, renderLinkPreview(href, link.textContent || href));
-      state.enhancedLinks.add(link);
-    }
-  });
-}
-
 function installPromptInjection(state) {
   const handler = (event) => {
     if (!state.settings.promptInjection || !state.settings.autoPromptHelper) return;
@@ -1385,143 +1259,6 @@ Do not place link preview cards inside tables.
 -->`;
 }
 
-function insertAfterLink(link, node, options = {}) {
-  const paragraph = link.closest("p, li, div") || link;
-  if (paragraph.nextElementSibling?.dataset?.codexmodLinkPreview === "true") {
-    if (options.hideStandaloneLink) hideStandaloneLinkBlock(link, paragraph);
-    return;
-  }
-  link.dataset.codexmodLinkEnhanced = "true";
-  node.dataset.codexmodLinkPreview = "true";
-  paragraph.after(node);
-  if (options.hideStandaloneLink) hideStandaloneLinkBlock(link, paragraph);
-}
-
-function cleanupVideoCards() {
-  document.querySelectorAll(".codexmod-video-card").forEach((card) => {
-    const link = findAssociatedYouTubeLink(card);
-    if (link) hideStandaloneLinkBlock(link);
-    if (isCurrentVideoCard(card)) return;
-    if (!link) return;
-    const videoId = parseYouTubeUrl(link.href);
-    if (!videoId) return;
-    const replacement = renderYouTubeEmbed(videoId, link.href, link.textContent || link.href);
-    replacement.dataset.codexmodLinkPreview = "true";
-    link.dataset.codexmodLinkEnhanced = "true";
-    card.replaceWith(replacement);
-    hideStandaloneLinkBlock(link);
-  });
-}
-
-function isCurrentVideoCard(card) {
-  const hasCurrentSurface = card.querySelector?.(".codexmod-video-surface.codexmod-video-thumb");
-  const hasLegacyChrome =
-    card.querySelector?.(".codexmod-video-actions, .codexmod-video-framebar, .codexmod-video-meta")
-    || /\b(Hide video|Open on YouTube)\b/i.test(card.textContent || "");
-  return Boolean(hasCurrentSurface && !hasLegacyChrome);
-}
-
-function findAssociatedYouTubeLink(card) {
-  const candidates = [];
-  for (let node = card.previousElementSibling, hops = 0; node && hops < 4; node = node.previousElementSibling, hops += 1) {
-    candidates.push(...Array.from(node.querySelectorAll?.("a[href]") || []));
-    if (node.matches?.("a[href]")) candidates.push(node);
-  }
-  candidates.push(...Array.from(card.querySelectorAll?.("a[href]") || []));
-  return candidates.find((link) => parseYouTubeUrl(link.href));
-}
-
-function hideStandaloneLinkBlock(link, block = link.closest("p, li, div")) {
-  if (!isStandaloneLinkBlock(link, block)) return false;
-  block.dataset.codexmodLinkSource = "youtube";
-  block.style.display = "none";
-  return true;
-}
-
-function isStandaloneLinkBlock(link, block) {
-  if (!block || block === link) return false;
-  const links = Array.from(block.querySelectorAll?.("a[href]") || []);
-  if (links.length !== 1 || links[0] !== link) return false;
-  const clone = block.cloneNode(true);
-  clone.querySelector?.("a[href]")?.remove();
-  return !(clone.textContent || "").trim();
-}
-
-function parseYouTubeUrl(href) {
-  try {
-    const url = new URL(href);
-    if (url.hostname === "youtu.be") return url.pathname.slice(1);
-    if (url.hostname.endsWith("youtube.com")) {
-      if (url.pathname === "/watch") return url.searchParams.get("v");
-      if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/") || url.pathname.startsWith("/live/")) return url.pathname.split("/")[2];
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function isPreviewableHttpUrl(href) {
-  try {
-    const url = new URL(href);
-    return ["http:", "https:"].includes(url.protocol);
-  } catch {
-    return false;
-  }
-}
-
-function renderYouTubeEmbed(videoId, href, label) {
-  const safeId = encodeURIComponent(videoId);
-  const url = new URL(href);
-  const title = cleanLinkLabel(label, url);
-  const host = url.hostname.replace(/^www\./, "");
-  const card = el("section", { className: "codexmod-link-card codexmod-video-card" });
-  renderYouTubePreview(card, safeId, href, title, host);
-  return card;
-}
-
-function renderYouTubePreview(card, safeId, href, title, host) {
-  card.className = "codexmod-link-card codexmod-video-card codexmod-video-card-preview";
-  card.innerHTML = "";
-  card.append(
-    el("a", {
-      className: "codexmod-video-surface codexmod-video-thumb",
-      href,
-      target: "_blank",
-      rel: "noreferrer",
-      "aria-label": `Open YouTube video: ${title}`,
-    }, [
-      el("img", {
-        src: `https://i.ytimg.com/vi/${safeId}/hqdefault.jpg`,
-        alt: "YouTube video thumbnail",
-        loading: "lazy",
-      }),
-      el("span", { className: "codexmod-video-play", "aria-hidden": "true" }, ["▶"]),
-    ]),
-    el("div", { className: "codexmod-video-overlay" }, [
-      el("a", { className: "codexmod-video-title", href, target: "_blank", rel: "noreferrer" }, [title]),
-      el("span", { className: "codexmod-video-domain" }, [host]),
-    ]),
-  );
-}
-
-function renderLinkPreview(href, label) {
-  const url = new URL(href);
-  return el("section", { className: "codexmod-link-card" }, [
-    el("div", { className: "codexmod-link-favicon" }, [url.hostname.slice(0, 1).toUpperCase()]),
-    el("div", {}, [
-      el("strong", {}, [cleanLinkLabel(label, url)]),
-      el("span", {}, [url.hostname.replace(/^www\./, "")]),
-    ]),
-  ]);
-}
-
-function cleanLinkLabel(label, url) {
-  const text = String(label || "").trim();
-  if (!text || text === url.href) return url.hostname.replace(/^www\./, "");
-  return text.length > 90 ? `${text.slice(0, 87)}...` : text;
-}
-
 function renderError(target, message, raw) {
   target.innerHTML = "";
   target.append(el("section", { className: "codex-components codexmod-component codexmod-error" }, [
@@ -1578,223 +1315,6 @@ function insertPrompt(text) {
   if ("value" in composer) composer.value = text;
   else composer.textContent = text;
   composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
-}
-
-function registerSettings(state) {
-  const page = {
-    id: "main",
-    title: "Codex Components",
-    description: "Structured Codex components, media cards, link previews, and polished tables.",
-    iconSvg:
-      '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-      '<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>' +
-      '<path d="M6 8h3M6 11h8M12 8h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' +
-      "</svg>",
-    render(root) {
-      renderSettingsPage(root, state);
-    },
-  };
-
-  if (typeof state.api.settings?.registerPage === "function") {
-    state.pageHandle = state.api.settings.registerPage(page);
-  }
-
-  state.sectionHandle = state.api.settings.register({
-    id: "com.codexmod.components:summary",
-    title: "Codex Components",
-    description: "Open the Components page to configure renderers.",
-    render(root) {
-      root.innerHTML = "";
-      root.append(el("div", { className: "codexmod-settings codexmod-settings-compact" }, [
-        el("p", {}, ["Component rendering is ", el("strong", {}, [state.settings.renderer ? "on" : "off"]), ". Configure Codex Components from the sidebar tab."]),
-      ]));
-    },
-  });
-}
-
-function renderSettingsPage(root, state) {
-  state.pageRoot = root;
-  root.innerHTML = "";
-  const settings = state.settings;
-  root.append(el("div", { className: "codexmod-settings" }, [
-    el("section", { className: "codexmod-settings-hero" }, [
-      el("div", {}, [
-        el("h2", {}, ["Codex Components"]),
-        el("p", {}, ["Turn raw tool output into readable components, tables, media cards, and link previews."]),
-      ]),
-      el("span", { className: "codexmod-settings-pill" }, [settings.renderer ? "Active" : "Paused"]),
-    ]),
-    settings.onboardingDismissed ? null : onboardingPanel(state),
-    updatePanel(state),
-    settingsGroup("Rendering", [
-      toggleRow(state, "renderer", "Enable renderer", "Render component blocks in chat."),
-    ]),
-    settingsGroup("Automatic polish", [
-      toggleRow(state, "tablePolish", "Polish normal tables", "Restyle Markdown/tool tables so they read closer to Claude Cowork."),
-      toggleRow(state, "mediaEmbeds", "Preview video links", "Turn YouTube links into native preview cards outside tables."),
-      toggleRow(state, "linkPreviews", "Open Graph-style link cards", "Show clean link cards outside tables without touching tabular data."),
-      toggleRow(state, "autoPromptHelper", "Prompt helper", "Keep a copyable instruction contract for model responses that should become components."),
-    ]),
-    promptContract(settings),
-  ]));
-}
-
-function onboardingPanel(state) {
-  return el("section", { className: "codexmod-settings-group codexmod-onboarding" }, [
-    el("div", { className: "codexmod-settings-group-head" }, [
-      el("div", {}, [
-        el("h3", {}, ["Start Here"]),
-        el("p", { className: "codexmod-settings-muted" }, ["Codex Components is installed. These defaults keep rich output useful without taking over the transcript."]),
-      ]),
-      button("Got it", () => dismissOnboarding(state)),
-    ]),
-    el("div", { className: "codexmod-onboarding-grid" }, [
-      onboardingStep("1", "Ask for components", "Use direct component types for structured output, choices for follow-up prompts, and html only for compact custom visuals."),
-      onboardingStep("2", "Use normal links", "Leave YouTube and useful URLs as plain links outside tables so preview cards can render cleanly."),
-      onboardingStep("3", "Stay scroll-safe", "Avoid long custom HTML rows. Use table, timeline, records, or group for tall content."),
-    ]),
-    el("div", { className: "codexmod-settings-actions" }, [
-      button("Copy example prompt", () => navigator.clipboard.writeText(examplePromptText())),
-      button("Show component gallery", () => insertPrompt(componentGalleryPromptText())),
-      button("Check for updates", () => checkForUpdates(state, { force: true })),
-    ]),
-  ]);
-}
-
-function onboardingStep(number, title, body) {
-  return el("article", { className: "codexmod-onboarding-step" }, [
-    el("span", {}, [number]),
-    el("strong", {}, [title]),
-    el("p", {}, [body]),
-  ]);
-}
-
-function dismissOnboarding(state) {
-  state.settings.onboardingDismissed = true;
-  saveSettings(state);
-  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
-}
-
-function updatePanel(state) {
-  const update = state.updateCheck || defaultUpdateCheck();
-  const status = updateStatusCopy(update);
-  return el("section", { className: `codexmod-settings-group codexmod-update-panel is-${update.status}` }, [
-    el("div", { className: "codexmod-settings-group-head" }, [
-      el("div", {}, [
-        el("h3", {}, ["Updates"]),
-        el("p", { className: "codexmod-settings-muted" }, [status.body]),
-      ]),
-      el("span", { className: `codexmod-settings-pill ${status.tone}` }, [status.label]),
-    ]),
-    el("div", { className: "codexmod-update-meta" }, [
-      el("span", {}, ["Installed ", el("strong", {}, [CURRENT_VERSION])]),
-      update.latestVersion ? el("span", {}, ["Latest ", el("strong", {}, [update.latestVersion])]) : null,
-      update.checkedAt ? el("span", {}, ["Checked ", el("strong", {}, [formatCheckedAt(update.checkedAt)])]) : null,
-      activeCodexPlusPlusHome() ? el("span", {}, ["Home ", el("strong", {}, [activeCodexPlusPlusHome()])]) : null,
-    ]),
-    update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
-    el("div", { className: "codexmod-settings-actions" }, [
-      update.status === "available" ? button("Update Codex Components", () => insertPrompt(updatePromptText(update.latestVersion, activeCodexPlusPlusHome()))) : null,
-      button(update.status === "checking" ? "Checking..." : "Refresh from GitHub", () => checkForUpdates(state, { force: true })),
-      state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
-    ]),
-  ]);
-}
-
-function updateStatusCopy(update) {
-  if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components manifest." };
-  if (update.status === "available") return { label: "Update available", tone: "tone-amber", body: `Version ${update.latestVersion} is available on GitHub.` };
-  if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components version." };
-  if (update.status === "error") return { label: "Unable to check", tone: "tone-red", body: "Codex Components could not reach the GitHub manifest." };
-  return { label: "Not checked", tone: "tone-gray", body: "Codex Components checks on startup, every hour, and when you click Check again." };
-}
-
-function formatCheckedAt(timestamp) {
-  try {
-    return new Date(timestamp).toLocaleString();
-  } catch {
-    return "recently";
-  }
-}
-
-function showOnboarding(state) {
-  state.settings.onboardingDismissed = false;
-  saveSettings(state);
-  if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
-}
-
-function examplePromptText() {
-  return "Create a Codex Components group with metrics, insights, progress, timeline, table, recommendations, actions, choices, and one compact html component.";
-}
-
-function componentGalleryPromptText() {
-  return "Create a Codex Components gallery with one example of every supported v0.2 component type: group, metrics, insights, funnel, bars, progress, callouts, records, alerts, comparison, timeline, quote, tags, table, recommendations, actions, choices, and html.";
-}
-
-function activeCodexPlusPlusHome() {
-  const tweaksDir = String(window.__codexpp_tweaks_dir__ || "").trim();
-  if (!tweaksDir) return "";
-  return tweaksDir.replace(/\/tweaks\/?$/, "");
-}
-
-function updatePromptText(latestVersion = "", codexPlusPlusHome = "") {
-  const versionLine = latestVersion ? ` Latest detected version: ${latestVersion}.` : "";
-  const homeLine = codexPlusPlusHome
-    ? ` Use this exact active Codex++ home when running the installer: CODEX_PLUSPLUS_HOME="${codexPlusPlusHome}".`
-    : " If Codex++ is using a copied app home, detect and update that active home instead of assuming the default codex-plusplus folder.";
-  return `Update Codex Components from GitHub:
-https://github.com/moonmidas/codex-components
-
-Please inspect the README and installer first, then run the macOS installer.${versionLine}${homeLine} Preserve existing Codex++ settings and tell me when to restart Codex++.`;
-}
-
-function settingsGroup(title, rows) {
-  return el("section", { className: "codexmod-settings-group" }, [
-    el("h3", {}, [title]),
-    el("div", { className: "codexmod-settings-list" }, rows),
-  ]);
-}
-
-function toggleRow(state, key, title, description) {
-  const input = el("input", { type: "checkbox" });
-  input.checked = Boolean(state.settings[key]);
-  input.addEventListener("change", () => setSetting(state, key, input.checked));
-  return el("label", { className: "codexmod-settings-row" }, [
-    el("span", {}, [
-      el("strong", {}, [title]),
-      el("em", {}, [description]),
-    ]),
-    input,
-  ]);
-}
-
-function promptContract(settings) {
-  const contract = [
-    "When tool results contain analytics, funnel, campaign, revenue, retention, table, comparison data, or structured choices, prefer codex-component blocks over prose-only output.",
-    "Use fenced JSON blocks with language codex-component.",
-    "Supported component types: group, metrics, insights, funnel, bars, progress, callouts, records, alerts, comparison, timeline, quote, tags, table, recommendations, actions, choices, html.",
-    "Use group only to combine several components; otherwise emit the exact component directly.",
-    "Use choices for selectable follow-up prompts.",
-    "Use html only for bounded custom visuals or advanced mini-tools that cannot be expressed with declarative components.",
-    "Do not use html for long lists, repeated rows, tables, record grids, or nested card layouts; use table, timeline, records, insights, or group instead.",
-    "If html is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.",
-    "Use concise labels, short interpretations, and color intent: blue neutral, teal good, amber warning, red problem.",
-    "For video URLs, leave the URL as a normal link; Codex Components will preview it outside tables.",
-    "For links with useful context, leave the URL as a normal link; Codex Components will show an Open Graph-style card outside tables.",
-    "Do not put link preview cards inside tables.",
-  ].join("\n");
-  return el("section", { className: "codexmod-settings-group" }, [
-    el("h3", {}, ["Prompt contract"]),
-    el("p", { className: "codexmod-settings-muted" }, [
-      settings.autoPromptHelper
-        ? "Use this as the default response contract for agents/skills that should output beautiful components."
-        : "Prompt helper is off, but you can still copy this manually.",
-    ]),
-    el("pre", { className: "codexmod-settings-prompt" }, [contract]),
-    el("div", { className: "codexmod-settings-actions" }, [
-      button("Copy prompt contract", () => navigator.clipboard.writeText(contract)),
-    ]),
-  ]);
 }
 
 function installStyles(state) {
