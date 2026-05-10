@@ -43,6 +43,27 @@ test("loads shared helpers through local CommonJS modules in the tweak VM", () =
   assert.equal(tweak.__test.COMPONENT_TYPES.includes("html"), true);
 });
 
+test("loads bundled renderer entry without a global require", () => {
+  const filename = join(__dirname, "index.js");
+  const module = { exports: {} };
+  const context = {
+    module,
+    exports: module.exports,
+    process,
+    console,
+    URL,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  };
+
+  new vm.Script(readFileSync(filename, "utf8"), { filename }).runInNewContext(context);
+
+  assert.equal(typeof module.exports.start, "function");
+  assert.equal(module.exports.__test.normalizeDescriptor(JSON.stringify({ type: "metrics", version: 1 })).ok, true);
+});
+
 const DECLARATIVE_COMPONENT_CASES = [
   {
     type: "metrics",

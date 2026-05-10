@@ -7,9 +7,10 @@
     "codex-components": "./scripts/install.mjs"
   },
   "scripts": {
+    "build:tweak": "node ./scripts/bundle-codex-components.mjs",
     "install:local": "node ./scripts/install.mjs",
     "test": "node --test scripts/install.test.mjs tweaks/codex-components/index.test.cjs",
-    "check": "node --check ./scripts/install.mjs && node --check ./tweaks/codex-components/index.js && node --check ./tweaks/codex-components/core/settings.js && node --check ./tweaks/codex-components/core/update-checks.js && node --check ./tweaks/codex-components/media/links.js && node --check ./tweaks/codex-components/media/youtube.js && npm test"
+    "check": "node --check ./scripts/install.mjs && node --check ./scripts/bundle-codex-components.mjs && node --check ./tweaks/codex-components/index.source.js && node --check ./tweaks/codex-components/index.js && node --check ./tweaks/codex-components/core/settings.js && node --check ./tweaks/codex-components/core/update-checks.js && node --check ./tweaks/codex-components/media/links.js && node --check ./tweaks/codex-components/media/youtube.js && npm test"
   },
   "engines": {
     "node": ">=20"
