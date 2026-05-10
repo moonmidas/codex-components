@@ -321,9 +321,20 @@ function collectTextFenceBlocks(state, blocks, allowBlock = () => true) {
   while (textNode && checked < 800) {
     checked += 1;
     const text = textNode.textContent || "";
-    if (text.includes("```codex-component")) {
-      const source = nearestRenderableSource(textNode);
-      if (source && !isComposerSurface(source) && !seen.has(source) && !shouldSkipNode(state, source)) {
+    const source = nearestRenderableSource(textNode);
+    if (source && !isComposerSurface(source) && !seen.has(source) && !shouldSkipNode(state, source)) {
+      const sourceText = source.textContent || text;
+      const standaloneJson = source.matches?.("main, body") ? "" : standaloneComponentJson(sourceText);
+      if (standaloneJson) {
+        pushAllowedBlock(blocks, allowBlock, {
+          node: source,
+          sourceNode: source,
+          language: "codex-component",
+          raw: standaloneJson,
+          hideSource: true,
+        });
+        seen.add(source);
+      } else if (text.includes("```codex-component")) {
         for (const block of blocksFromText(state, source, source.textContent || text, shouldHideSource(source))) {
           pushAllowedBlock(blocks, allowBlock, block);
         }
@@ -332,6 +343,12 @@ function collectTextFenceBlocks(state, blocks, allowBlock = () => true) {
     }
     textNode = walker.nextNode();
   }
+}
+
+function standaloneComponentJson(text) {
+  const value = String(text || "").trim();
+  if (!value.startsWith("{") || !value.endsWith("}")) return "";
+  return looksLikeComponentJson(value) ? value : "";
 }
 
 function nearestRenderableSource(textNode) {
@@ -402,7 +419,7 @@ function looksLikeComponentJson(raw) {
 }
 
 function mountBlock(state, block) {
-  const sourceNode = block.hideSource ? findCodeBlockShell(block.node, block.raw, block.language) : block.node;
+  const sourceNode = block.sourceNode || (block.hideSource ? findCodeBlockShell(block.node, block.raw, block.language) : block.node);
   if (state.mounted.has(block.node) || state.mounted.has(sourceNode)) return;
   const result = normalizeDescriptor(block.raw, block.language);
   if (!result.ok && isIncompleteComponentJson(block.raw, result.error)) return;
@@ -410,7 +427,7 @@ function mountBlock(state, block) {
     state.mounted.add(block.node);
     state.mounted.add(sourceNode);
     sourceNode.dataset.codexmodComponentSource = "true";
-    if (block.hideSource) sourceNode.style.display = "none";
+    if (block.hideSource) hideComponentSource(block, sourceNode);
     const mount = document.createElement("div");
     mount.className = "codex-components";
     mount.dataset.codexmodComponentMount = "true";
@@ -422,7 +439,7 @@ function mountBlock(state, block) {
   state.mounted.add(block.node);
   state.mounted.add(sourceNode);
   sourceNode.dataset.codexmodComponentSource = "true";
-  if (block.hideSource) sourceNode.style.display = "none";
+  if (block.hideSource) hideComponentSource(block, sourceNode);
   const mount = document.createElement("div");
   mount.className = "codex-components";
   mount.dataset.codexmodComponentMount = "true";
@@ -436,6 +453,14 @@ function mountBlock(state, block) {
     }
   } catch (error) {
     renderError(mount, error.message || String(error), block.raw);
+  }
+}
+
+function hideComponentSource(block, sourceNode) {
+  for (const node of [sourceNode, block.sourceNode, block.node]) {
+    if (!node?.style) continue;
+    node.style.display = "none";
+    node.dataset.codexmodComponentSource = "true";
   }
 }
 

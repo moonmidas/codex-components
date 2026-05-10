@@ -1071,6 +1071,36 @@ test("does not render component fences from composer surfaces", () => {
   assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 0);
 });
 
+test("renders standalone component JSON from assistant message text", () => {
+  setupDom(`
+    <main>
+      <article data-message-author-role="assistant">
+{
+  "type": "group",
+  "version": 1,
+  "title": "Serenity Links por Quiz",
+  "components": [
+    {
+      "type": "table",
+      "version": 1,
+      "title": "Top posts por link clicks",
+      "columns": ["Fecha", "Quiz", "Clicks", "Post"],
+      "rows": [["2026-05-04", "Pasado", "314", "Haz el test:"]]
+    }
+  ]
+}
+      </article>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.equal(document.querySelector(".codexmod-component-title").textContent, "Serenity Links por Quiz");
+  assert.match(document.querySelector(".codexmod-table").textContent, /Haz el test:/);
+  assert.equal(document.querySelector("[data-message-author-role='assistant']").style.display, "none");
+});
+
 test("renders metrics blocks through the local renderer by default", () => {
   setupDom(`
     <main>
