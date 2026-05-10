@@ -1,3 +1,5 @@
+const { iconGlyph } = require("../../core/icons.js");
+
 function render(body, section, helpers) {
   const { el, sectionWrap, toneClass } = helpers;
   const wrap = sectionWrap(section, "codexmod-numbered-section");
@@ -9,7 +11,10 @@ function render(body, section, helpers) {
         el("h5", {}, [item.title || item.label || "Finding"]),
       ]),
       item.body ? el("p", {}, [item.body]) : null,
-      item.recommendation ? el("div", { className: "codexmod-recommendation-box" }, [item.icon || "Lightbulb", " ", item.recommendation]) : null,
+      item.recommendation ? el("div", { className: "codexmod-recommendation-box" }, [
+        el("span", { className: "codexmod-recommendation-icon", "aria-hidden": "true" }, [iconGlyph(item.icon || "Lightbulb")]),
+        el("span", {}, [item.recommendation]),
+      ]) : null,
     ]));
   }
   body.append(wrap);

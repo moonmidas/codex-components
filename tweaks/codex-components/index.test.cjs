@@ -186,6 +186,34 @@ test("renders every declarative component type directly", () => {
   }
 });
 
+test("renders icon names as glyphs instead of raw labels", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "group",
+    version: 1,
+    title: "Icon Check",
+    components: [
+      {
+        type: "callouts",
+        version: 1,
+        items: [{ title: "Priority", value: "9", recommendation: "Prioritize this.", icon: "Lightbulb" }],
+      },
+      {
+        type: "alerts",
+        version: 1,
+        items: [{ title: "Signal", body: "Looks right.", icon: "CheckCircle" }],
+      },
+    ],
+  });
+
+  assert.equal(document.querySelector(".codexmod-recommendation-icon").textContent, "✦");
+  assert.equal(document.querySelector(".codexmod-alert-icon").textContent, "✓");
+  assert.equal(document.body.textContent.includes("Lightbulb"), false);
+  assert.equal(document.body.textContent.includes("CheckCircle"), false);
+});
+
 test("renders group as a component that contains other components", () => {
   setupDom();
   const state = testState();

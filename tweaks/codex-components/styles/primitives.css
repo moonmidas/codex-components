@@ -61,6 +61,9 @@
 .codexmod-numbered h5 { margin:0; font-size:18px; font-weight:500; }
 .codexmod-numbered p { margin:10px 0 0 56px; color:var(--cm-muted); font-size:14px; line-height:1.45; }
 .codexmod-recommendation-box {
+  display:flex;
+  align-items:center;
+  gap:8px;
   margin:12px 0 0 56px;
   padding:10px 12px;
   border-radius:9px;
@@ -68,6 +71,16 @@
   border:1px solid var(--cm-border);
   color:var(--cm-muted);
   line-height:1.4;
+}
+.codexmod-recommendation-icon {
+  display:inline-grid;
+  place-items:center;
+  width:18px;
+  height:18px;
+  border-radius:999px;
+  color:var(--tone, var(--cm-blue));
+  font-weight:600;
+  flex:0 0 auto;
 }
 .codexmod-alert {
   display:flex;
