@@ -110,6 +110,13 @@ const DECLARATIVE_COMPONENT_CASES = [
   },
 ];
 
+const COMPONENT_TYPES = [
+  "group",
+  ...DECLARATIVE_COMPONENT_CASES.map((component) => component.type),
+  "choices",
+  "html",
+];
+
 test("renders every declarative component type directly", () => {
   for (const component of DECLARATIVE_COMPONENT_CASES) {
     setupDom();
@@ -1204,11 +1211,14 @@ test("package, manifest, and runtime component versions stay in sync", () => {
   assert.equal(packageJson.version, runtimeVersion);
 });
 
-test("README supported section list matches the renderer contract", () => {
+test("README and examples list every v0.2 component type", () => {
   const readme = readFileSync(join(__dirname, "..", "..", "README.md"), "utf8");
-  for (const section of ALL_DASHBOARD_SECTIONS) {
-    assert.match(readme, new RegExp(`(?:- |\\| )\`${section.type}\``), `${section.type} is missing from README.md`);
+  const examples = readFileSync(join(__dirname, "..", "..", "docs", "examples", "all-components.md"), "utf8");
+  for (const type of COMPONENT_TYPES) {
+    assert.match(readme, new RegExp(`\\| \`${type}\``), `${type} is missing from README.md`);
+    assert.match(examples, new RegExp(`"type": "${type}"`), `${type} is missing from all-components.md`);
   }
+  assert.doesNotMatch(readme, /metric_strip|insight_grid|progress_bars|action_chips|show_widget|html_widget|widget_code|intake/);
 });
 
 function mountJson(state, descriptor) {

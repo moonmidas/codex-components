@@ -1,6 +1,6 @@
 # Codex Components
 
-Codex Components is a Codex++ tweak that makes Codex answers easier to read when they contain structured output: dashboards, metric cards, polished tables, link cards, YouTube previews, guided intake cards, and sandboxed HTML widgets.
+Codex Components is a Codex++ tweak that makes Codex answers easier to read when they contain structured output: metrics, records, timelines, tables, recommendations, choices, media previews, and advanced bounded HTML components.
 
 It is built on top of [Codex++](https://github.com/b-nnett/codex-plusplus). This repo is a bootstrapper: it installs Codex++, keeps the starter tweaks, installs the Codex Components tweak, and only changes Bennett's **Sidebar action grid** and **Sidebar project backgrounds** defaults on first-time Codex++ installs.
 
@@ -32,81 +32,114 @@ The installer:
 
 ## What It Adds
 
-- `codex-component` dashboards for tool/plugin/skill output.
-- Theme-aware Claude Cowork-style metric cards, insight grids, funnels, bar charts, tables, recommendations, and action chips.
+- A single `codex-component` fenced JSON contract for structured visual output.
+- Theme-aware components for metrics, insights, funnels, bars, progress, callouts, records, alerts, comparisons, timelines, quotes, tags, tables, recommendations, actions, choices, and experimental HTML.
 - Normal Markdown table polish.
 - Native YouTube preview cards and Open Graph-style link cards outside tables.
-- A Settings page under Tweaks where each renderer can be enabled or disabled.
-- A first-run onboarding panel in Settings with copyable starter prompts.
+- A Settings page under Tweaks with onboarding, update checks, and a copyable prompt contract.
 - Startup and hourly update checks against the GitHub manifest, with an update button when a newer version exists.
-- Automatic prompt-contract injection for tool/plugin-like prompts, with an opt-out toggle.
-- A `codex-components` skill that teaches Codex how to create component dashboards, intake cards, video previews, and clean tables.
+- A `codex-components` skill that teaches Codex how to create components, video previews, and clean tables.
 
-## Tweak Blocks
+## Component Blocks
 
-Codex Components renders fenced JSON blocks:
+Codex Components renders fenced JSON blocks with language `codex-component`.
 
 ```codex-component
 {
-  "type": "dashboard",
+  "type": "metrics",
   "version": 1,
-  "title": "Example Dashboard",
-  "sections": [
+  "title": "Example Metrics",
+  "subtitle": "One compact component",
+  "items": [
+    { "label": "Visitors", "value": "1.2K", "delta": "last 7 days", "tone": "blue" }
+  ]
+}
+```
+
+Every block uses:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `type` | Yes | One supported component type. |
+| `version` | Yes | Use `1`. |
+| `title` | Usually | Short visible heading. |
+| `subtitle` | No | One-line context. |
+| Type fields | Yes | Examples: `items`, `components`, `columns`, `rows`, `options`, or `code`. |
+
+## Component Catalogue
+
+| Type | Best For | Key Fields |
+| --- | --- | --- |
+| `group` | Combining several components in one surface | `components[]` |
+| `metrics` | KPI strips and compact stat tiles | `items[]`: `label`, `value`, `delta`, `trend`, `sparkline`, `tone` |
+| `insights` | Short explanation cards | `items[]`: `title`, `body` |
+| `funnel` | Ordered conversion or process steps | `steps[]` or `items[]`: `label`, `value`, `tone` |
+| `bars` | Horizontal comparisons | `items[]`: `label`, `value`, `tone` |
+| `progress` | Percent completion and status | `items[]`: `label`, `percent` or `value`, `body`, `tone` |
+| `callouts` | Ranked findings and recommendations | `items[]`: `rank`, `value`, `title`, `body`, `recommendation`, `tone` |
+| `records` | People, accounts, issues, receipts | `items[]`: `title`, `subtitle`, `avatar`, `fields[]`, `pills[]`, `tone` |
+| `alerts` | Notes, warnings, success states | `items[]`: `title`, `body`, `icon`, `tone` |
+| `comparison` | Options, plans, variants | `items[]`: `title`, `badge`, `price` or `value`, `body`, `features[]`, `featured`, `tone` |
+| `timeline` | Steps, status, history | `items[]`: `title`, `body`, `status`, `meta`, `tone` |
+| `quote` | Quotes or testimonials | `quote`, `source`, `tone` |
+| `tags` | Topics, labels, categories | `items[]`: strings or `{ "label": "...", "tone": "..." }` |
+| `table` | Repeated rows and data grids | `columns[]`, `rows[]` |
+| `recommendations` | Prioritized actions | `items[]`: `title`, `body` |
+| `actions` | Follow-up prompt buttons | `items[]`: `label`, `prompt` |
+| `choices` | Selectable follow-up options | `options[]`: `label`, `description`, `prompt` |
+| `html` | Experimental custom visuals or mini-tools | `code`, optional `height`, optional `max_height` |
+
+## Composition
+
+Use `group` when several components should stay together.
+
+```codex-component
+{
+  "type": "group",
+  "version": 1,
+  "title": "Launch Review",
+  "components": [
     {
-      "type": "metric_strip",
-      "items": [
-        { "label": "Visitors", "value": "1.2K", "delta": "last 7 days" }
-      ]
+      "type": "metrics",
+      "version": 1,
+      "title": "Health",
+      "items": [{ "label": "Pass rate", "value": "98%", "tone": "teal" }]
+    },
+    {
+      "type": "recommendations",
+      "version": 1,
+      "title": "Next",
+      "items": [{ "title": "Ship the update", "body": "All blocking checks are green." }]
     }
   ]
 }
 ```
 
-## Component Catalogue
+## HTML Component
 
-Top-level component blocks:
+`html` is advanced and experimental. Use it only when the visual cannot be expressed with declarative components.
 
-| Component | Fence / Type | Subcomponents |
-| --- | --- | --- |
-| Dashboard | `codex-component`, `type: "dashboard"` | `sections[]` using the dashboard section types below |
-| Intake card | `codex-component`, `type: "intake"` | `options[]` with `label`/`title`, optional `description`, and `prompt` |
-| HTML widget | `codex-component`, `type: "html_widget"` or `codex-widget` | `html` or `content`, optional `height` and `max_height` |
-| Show widget | `show_widget`, `show-widget`, or `type: "show_widget"` | `widget_code`, optional `html`/`content`, `height`, `max_height`, and `loading_messages` |
-| YouTube preview | Normal YouTube Markdown link outside tables | Thumbnail, title overlay, domain, and play affordance |
-| Link preview | Normal Markdown URL outside tables | Compact title/domain preview card |
-| Table polish | Normal Markdown table | Restyled table wrapper, header, and rows; disabled by default |
+```codex-component
+{
+  "type": "html",
+  "version": 1,
+  "title": "Compact Diagram",
+  "height": 360,
+  "code": "<svg role=\"img\" viewBox=\"0 0 400 180\"><title>Flow</title><desc>Simple process flow.</desc></svg>"
+}
+```
 
-Dashboard section types:
+Rules:
 
-| Section | Best For | Items / Subcomponents |
-| --- | --- | --- |
-| `metric_strip` | KPI rows | `items`/`metrics`: `label`, `value`, `delta`, `trend`, `sparkline`, `tone` |
-| `insight_grid` | Short explanation cards | `items`/`insights`: `title`, `body` |
-| `funnel` | Ordered conversion steps | `steps`/`items`: `label`, `value`, `tone` |
-| `bar_chart` | Horizontal comparisons | `items`/`bars`: `label`, `value`, `tone` |
-| `progress_bars` | Percent completion | `items`: `label`, `percent`/`value`, optional `body`, `tone` |
-| `numbered_callouts` | Ranked findings | `items`: `rank`, `value`, `title`, `body`, `recommendation`, `tone` |
-| `record_cards` | People, accounts, issues, receipts | `items`/`records`: `title`, `subtitle`, `avatar`, `fields[]`, `pills[]`, `tone` |
-| `alert_blocks` | Notes, warnings, success states | `items`/`alerts`: `title`, `body`, `icon`, `tone`/`status` |
-| `comparison_cards` | Options, plans, variants | `items`/`cards`: `title`, `badge`, `price`/`value`, `body`, `features[]`, `featured`, `tone` |
-| `timeline` | Steps, status, history | `items`/`steps`: `title`, `body`, `status`, `meta`, `tone` |
-| `pull_quote` | Quotes or testimonials | `quote`, `source`, `tone` |
-| `tag_cloud` | Tags, topics, categories | `items`/`tags`: strings or `{ label, tone }` |
-| `table` | Repeated rows and data grids | `columns[]`, `rows[]` |
-| `recommendations` | Prioritized actions | `items`: `title`, optional `body` |
-| `action_chips` | Follow-up prompts | `items`/`actions`: `label`, `prompt` |
+- Write an HTML/SVG fragment in `code`, not a full document.
+- Use local CSS only unless a chart library is genuinely needed.
+- Keep backgrounds transparent unless a surface is truly needed.
+- Avoid long repeated rows, nested panels, custom scroll containers, and `position: fixed`.
+- Use `table`, `timeline`, `records`, `insights`, or `group` for tall or row-based content.
 
-## Component Standard
+## Examples
 
-Prefer `codex-component` dashboard sections for transcript output:
-
-- Use `table` for repeated rows, logs, inventories, and verification grids.
-- Use `timeline` for step trackers and workflow status.
-- Use `record_cards` for small sets of rich records.
-- Use `insight_grid` for short explanation cards.
-- Use `intake` for choice prompts.
-
-Use `show_widget` only for compact custom visuals or real interaction that dashboard sections cannot express. Avoid long repeated row markup, nested card layouts, custom scroll containers, and large 1280px widgets except for renderer stress tests. The outer Codex Components frame owns widget scrolling.
+See [docs/examples/all-components.md](docs/examples/all-components.md) for one copyable example of every component type.
 
 ## Updates
 
