@@ -1,6 +1,6 @@
 {
   "name": "codex-components",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Codex++ bootstrap plus the Codex Components tweak.",
   "type": "module",
   "bin": {

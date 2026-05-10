@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-05-10
+
+- Reset the public component schema around direct component types: `group`, `metrics`, `insights`, `funnel`, `bars`, `progress`, `callouts`, `records`, `alerts`, `comparison`, `timeline`, `quote`, `tags`, `table`, `recommendations`, `actions`, `choices`, and `html`.
+- Replaced the old container-first output model with direct component rendering and recursive `group` composition.
+- Replaced guided option output with `choices`.
+- Replaced custom visual output with the experimental `html` component and a single `code` field.
+- Updated the settings prompt contract, onboarding copy, skill, README, and examples to teach the v0.2 schema.
+
 ## 0.1.1 - 2026-05-10
 
 - Added a first-run Codex Components onboarding panel in the Codex++ Settings page.

@@ -1,6 +1,6 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
-const TWEAK_BUILD = "2026-05-10-update-checks-v1";
-const CURRENT_VERSION = "0.1.1";
+const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
+const CURRENT_VERSION = "0.2.0";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
