@@ -1,0 +1,32 @@
+.codexmod-component {
+  position: relative;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  max-width: 980px;
+}
+.codexmod-component-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 72px 10px 0;
+  border-bottom: 0;
+}
+.codexmod-component-title { margin: 0; font-size: 16px; font-weight: 500; }
+.codexmod-component-subtitle { margin: 4px 0 0; color: var(--cm-muted); font-size: 12px; }
+.codexmod-component-body { padding: 0; display: grid; gap: 18px; }
+.codexmod-group .codexmod-component-body { gap: 14px; }
+.codexmod-group-child { min-width: 0; }
+.codexmod-group-child > .codexmod-component { max-width: none; }
+.codexmod-section-title {
+  margin: 0 0 9px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--cm-border);
+  color: var(--cm-faint);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 500;
+}

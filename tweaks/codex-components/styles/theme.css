@@ -1,0 +1,55 @@
+.codex-components {
+  --cm-bg: var(--color-background-primary, #ffffff);
+  --cm-panel: var(--color-background-secondary, #f6f6f3);
+  --cm-panel-2: var(--color-background-tertiary, #ecebe6);
+  --cm-border: var(--color-border-tertiary, rgba(44,44,42,.14));
+  --cm-text: var(--color-text-primary, #2c2c2a);
+  --cm-muted: var(--color-text-secondary, #5f5e5a);
+  --cm-faint: var(--color-text-tertiary, #888780);
+  --cm-blue: #378add;
+  --cm-teal: #1d9e75;
+  --cm-red: #e24b4a;
+  --cm-amber: #ba7517;
+  --cm-purple: #7f77dd;
+  --cm-coral: #d85a30;
+  --cm-pink: #c4497f;
+  --cm-green: #639922;
+  --cm-gray: #888780;
+  --cm-font-sans: var(--font-sans, inherit);
+  --cm-font-serif: var(--font-serif, ui-serif, Georgia, serif);
+  --cm-font-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  color: var(--cm-text);
+  font-size: 13px;
+  line-height: 1.42;
+  font-family: var(--cm-font-sans);
+  margin: 10px 0 18px;
+}
+@media (prefers-color-scheme: dark) {
+  .codex-components {
+    --cm-bg: var(--color-background-primary, #171714);
+    --cm-panel: var(--color-background-secondary, #242421);
+    --cm-panel-2: var(--color-background-tertiary, #2d2d29);
+    --cm-border: var(--color-border-tertiary, rgba(241,239,232,.13));
+    --cm-text: var(--color-text-primary, #f1efe8);
+    --cm-muted: var(--color-text-secondary, #b4b2a9);
+    --cm-faint: var(--color-text-tertiary, #888780);
+    --cm-blue: #85b7eb;
+    --cm-teal: #5dcaa5;
+    --cm-red: #f09595;
+    --cm-amber: #fac775;
+    --cm-purple: #afa9ec;
+    --cm-coral: #f0997b;
+    --cm-pink: #ef8bb8;
+    --cm-green: #97c459;
+    --cm-gray: #b4b2a9;
+  }
+}
+.tone-blue { --tone: var(--cm-blue); --tone-bg: rgba(133,183,235,.13); --tone-border: rgba(133,183,235,.36); }
+.tone-teal { --tone: var(--cm-teal); --tone-bg: rgba(93,202,165,.13); --tone-border: rgba(93,202,165,.36); }
+.tone-red { --tone: var(--cm-red); --tone-bg: rgba(240,149,149,.13); --tone-border: rgba(240,149,149,.36); }
+.tone-amber { --tone: var(--cm-amber); --tone-bg: rgba(250,199,117,.14); --tone-border: rgba(250,199,117,.38); }
+.tone-purple { --tone: var(--cm-purple); --tone-bg: rgba(175,169,236,.14); --tone-border: rgba(175,169,236,.38); }
+.tone-coral { --tone: var(--cm-coral); --tone-bg: rgba(240,153,123,.14); --tone-border: rgba(240,153,123,.38); }
+.tone-pink { --tone: var(--cm-pink); --tone-bg: rgba(239,139,184,.14); --tone-border: rgba(239,139,184,.38); }
+.tone-green { --tone: var(--cm-green); --tone-bg: rgba(151,196,89,.14); --tone-border: rgba(151,196,89,.38); }
+.tone-gray { --tone: var(--cm-gray); --tone-bg: rgba(180,178,169,.12); --tone-border: rgba(180,178,169,.3); }

@@ -4,6 +4,7 @@ const { join } = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { JSDOM } = require("jsdom");
+const { STYLE_LAYER_FILES, loadComponentCss } = loadStylesForTest();
 
 process.env.NODE_ENV = "test";
 const tweakContext = {};
@@ -1277,6 +1278,32 @@ test("active Codex++ home is derived from the runtime tweaks directory", () => {
   assert.equal(activeCodexPlusPlusHome(), "/Users/moonmidas/Library/Application Support/codex-plusplus-copy");
 });
 
+test("component CSS layers load in stable theme order", () => {
+  assert.deepEqual(Array.from(STYLE_LAYER_FILES), [
+    "theme.css",
+    "base.css",
+    "primitives.css",
+    "toolbar.css",
+    "settings.css",
+    "media.css",
+    "html.css",
+  ]);
+
+  const css = loadComponentCss(__dirname);
+  const positions = STYLE_LAYER_FILES.map((file) => css.indexOf(`/* ${file} */`));
+
+  assert.ok(positions.every((position) => position >= 0), "Every CSS layer should be labelled in the bundled output");
+  assert.deepEqual([...positions].sort((a, b) => a - b), Array.from(positions));
+});
+
+test("component CSS inherits Codex host font variables", () => {
+  const css = loadComponentCss(__dirname);
+
+  assert.match(css, /--cm-font-sans:\s*var\(--font-sans,\s*inherit\)/);
+  assert.match(css, /\.codex-components\s*\{[^}]*font-family:\s*var\(--cm-font-sans\)/s);
+  assert.doesNotMatch(css, /--cm-font-sans:\s*var\(--font-sans,\s*ui-sans-serif/);
+});
+
 test("package, manifest, and runtime component versions stay in sync", () => {
   const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(__dirname, "manifest.json"), "utf8"));
@@ -1376,14 +1403,35 @@ function loadTweakForTest(context) {
   Object.assign(context, {
     module,
     exports: module.exports,
+    __dirname,
     process,
     console,
     URL,
+    require: requireForTweakTest,
     setTimeout,
     clearTimeout,
     setInterval,
     clearInterval,
   });
   script.runInNewContext(context);
+  return module.exports;
+}
+
+function requireForTweakTest(specifier) {
+  if (specifier === "./core/styles.js") return loadStylesForTest();
+  return require(specifier);
+}
+
+function loadStylesForTest() {
+  const module = { exports: {} };
+  const filename = join(__dirname, "core", "styles.js");
+  const source = readFileSync(filename, "utf8");
+  const script = new vm.Script(source, { filename });
+  script.runInNewContext({
+    module,
+    exports: module.exports,
+    require,
+    __dirname: join(__dirname, "core"),
+  });
   return module.exports;
 }

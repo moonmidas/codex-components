@@ -1,0 +1,40 @@
+.codexmod-html-frame { width:100%; border:0; background:transparent; display:block; }
+.codexmod-html-scrollbox {
+  width: 100%;
+  max-width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  background: transparent;
+}
+.codexmod-html-scrollbox iframe {
+  min-width: 100%;
+}
+.codexmod-html-guard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cm-muted);
+  font-size: 12px;
+}
+.codexmod-html-guard button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cm-faint);
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.codexmod-html-guard button:hover,
+.codexmod-html-guard button:focus-visible {
+  color: var(--cm-text);
+  text-decoration: underline;
+}
