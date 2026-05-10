@@ -293,6 +293,26 @@ test("renders legacy dashboard payloads through the v0.2 component adapter", () 
   assert.equal(document.querySelectorAll(".codexmod-error").length, 0);
 });
 
+test("renders table rows from array data as visible cells", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "table",
+    version: 1,
+    title: "Top posts por link clicks",
+    columns: ["Fecha", "Quiz", "Clicks", "Post"],
+    rows: [
+      ["2026-05-04", "Pasado", "314", "Haz el test:"],
+      ["2026-05-09", "Estancamiento", "190", "Hay frases que se quedan años cuidando una puerta."],
+    ],
+  });
+
+  const cells = Array.from(document.querySelectorAll(".codexmod-table tbody td")).map((cell) => cell.textContent);
+  assert.deepEqual(cells.slice(0, 4), ["2026-05-04", "Pasado", "314", "Haz el test:"]);
+  assert.match(document.querySelector(".codexmod-table").textContent, /Estancamiento/);
+});
+
 test("renders choices through the direct renderer", () => {
   setupDom();
   const state = testState();
