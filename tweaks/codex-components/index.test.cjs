@@ -4,6 +4,7 @@ const { dirname, join, resolve } = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { JSDOM } = require("jsdom");
+const { STYLE_LAYER_FILES, loadComponentCss } = loadStylesForTest();
 
 process.env.NODE_ENV = "test";
 const tweakContext = {};
@@ -1288,6 +1289,32 @@ test("active Codex++ home is derived from the runtime tweaks directory", () => {
   assert.equal(activeCodexPlusPlusHome(), "/Users/moonmidas/Library/Application Support/codex-plusplus-copy");
 });
 
+test("component CSS layers load in stable theme order", () => {
+  assert.deepEqual(Array.from(STYLE_LAYER_FILES), [
+    "theme.css",
+    "base.css",
+    "primitives.css",
+    "toolbar.css",
+    "settings.css",
+    "media.css",
+    "html.css",
+  ]);
+
+  const css = loadComponentCss(__dirname);
+  const positions = STYLE_LAYER_FILES.map((file) => css.indexOf(`/* ${file} */`));
+
+  assert.ok(positions.every((position) => position >= 0), "Every CSS layer should be labelled in the bundled output");
+  assert.deepEqual([...positions].sort((a, b) => a - b), Array.from(positions));
+});
+
+test("component CSS inherits Codex host font variables", () => {
+  const css = loadComponentCss(__dirname);
+
+  assert.match(css, /--cm-font-sans:\s*var\(--font-sans,\s*inherit\)/);
+  assert.match(css, /\.codex-components\s*\{[^}]*font-family:\s*var\(--cm-font-sans\)/s);
+  assert.doesNotMatch(css, /--cm-font-sans:\s*var\(--font-sans,\s*ui-sans-serif/);
+});
+
 test("package, manifest, and runtime component versions stay in sync", () => {
   const packageJson = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(__dirname, "manifest.json"), "utf8"));
@@ -1390,6 +1417,7 @@ function loadTweakForTest(context) {
     module,
     exports: module.exports,
     require: localRequire,
+    __dirname,
     process,
     console,
     URL,
@@ -1430,4 +1458,9 @@ function loadVmCommonJsModule(context, cache, filename) {
   const factory = wrapped.runInNewContext(moduleContext);
   factory(module.exports, moduleContext.require, module, filename, dirname(filename));
   return module.exports;
+}
+
+function loadStylesForTest() {
+  const cache = new Map();
+  return loadVmCommonJsModule(globalThis, cache, join(__dirname, "core", "styles.js"));
 }

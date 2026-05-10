@@ -1,0 +1,31 @@
+.codexmod-component-toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.codexmod-component:hover .codexmod-component-toolbar,
+.codexmod-component:focus-within .codexmod-component-toolbar {
+  opacity: .82;
+  pointer-events: auto;
+}
+.codexmod-component-toolbar button {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cm-faint);
+  padding: 2px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.codexmod-component-toolbar button:hover,
+.codexmod-component-toolbar button:focus-visible {
+  color: var(--cm-text);
+  text-decoration: underline;
+}
