@@ -123,12 +123,35 @@ const DECLARATIVE_COMPONENT_CASES = [
   },
 ];
 
+const OWNED_REGISTRY_COMPONENT_TYPES = [
+  "insights",
+  "funnel",
+  "bars",
+  "progress",
+  "callouts",
+  "records",
+  "alerts",
+  "comparison",
+  "quote",
+  "tags",
+  "recommendations",
+  "actions",
+];
+
 const COMPONENT_TYPES = [
   "group",
   ...DECLARATIVE_COMPONENT_CASES.map((component) => component.type),
   "choices",
   "html",
 ];
+
+test("registry includes every owned declarative component renderer", () => {
+  const registry = loadVmCommonJsModule(globalThis, new Map(), join(__dirname, "core", "registry.js"));
+
+  for (const type of OWNED_REGISTRY_COMPONENT_TYPES) {
+    assert.equal(typeof registry.getComponentRenderer(type), "function", `${type} renderer should be registered`);
+  }
+});
 
 test("renders every declarative component type directly", () => {
   for (const component of DECLARATIVE_COMPONENT_CASES) {
@@ -1433,7 +1456,7 @@ function loadTweakForTest(context) {
 function createVmRequire(context, cache, baseDir) {
   return (specifier) => {
     if (!specifier.startsWith(".")) return require(specifier);
-    const filename = resolve(baseDir, specifier);
+    const filename = resolveTweakModule(specifier, baseDir);
     return loadVmCommonJsModule(context, cache, filename);
   };
 }
@@ -1463,4 +1486,15 @@ function loadVmCommonJsModule(context, cache, filename) {
 function loadStylesForTest() {
   const cache = new Map();
   return loadVmCommonJsModule(globalThis, cache, join(__dirname, "core", "styles.js"));
+}
+
+function resolveTweakModule(request, baseDir) {
+  const path = resolve(baseDir, request);
+  if (path.endsWith(".js")) return path;
+  try {
+    readFileSync(`${path}.js`, "utf8");
+    return `${path}.js`;
+  } catch {
+    return join(path, "index.js");
+  }
 }
