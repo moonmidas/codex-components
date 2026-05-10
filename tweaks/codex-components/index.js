@@ -1,4 +1,6 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
+const { getComponentRenderer } = require("./core/registry.js");
+
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.0";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
@@ -656,22 +658,23 @@ function renderComponent(target, descriptor, raw, state, options = {}) {
 function renderLeafComponent(target, descriptor, raw, state, options = {}) {
   const body = options.embedded ? target : options.body || renderShell(target, descriptor, raw, state, `codexmod-${descriptor.type}`);
   const section = options.embedded ? descriptor : withoutSectionTitle(descriptor);
-  if (descriptor.type === "metrics") renderMetricStrip(body, section);
-  else if (descriptor.type === "insights") renderInsightGrid(body, section);
-  else if (descriptor.type === "funnel" || descriptor.type === "bars") renderBars(body, section);
-  else if (descriptor.type === "progress") renderProgressBars(body, section);
-  else if (descriptor.type === "callouts") renderNumberedCallouts(body, section);
-  else if (descriptor.type === "records") renderRecordCards(body, section);
-  else if (descriptor.type === "alerts") renderAlertBlocks(body, section);
-  else if (descriptor.type === "comparison") renderComparisonCards(body, section);
+  const renderer = getComponentRenderer(descriptor.type);
+  if (renderer) renderer(body, section, declarativeRendererHelpers);
+  else if (descriptor.type === "metrics") renderMetricStrip(body, section);
   else if (descriptor.type === "timeline") renderTimeline(body, section);
-  else if (descriptor.type === "quote") renderPullQuote(body, section);
-  else if (descriptor.type === "tags") renderTagCloud(body, section);
   else if (descriptor.type === "table") renderTable(body, section);
-  else if (descriptor.type === "recommendations") renderRecommendations(body, section);
-  else if (descriptor.type === "actions") renderActions(body, section);
   else renderCallout(body, { body: `Unsupported component: ${descriptor.type}` });
 }
+
+const declarativeRendererHelpers = Object.freeze({
+  alertIcon,
+  button,
+  el,
+  initials,
+  insertPrompt,
+  sectionWrap,
+  toneClass,
+});
 
 function withoutSectionTitle(descriptor) {
   if (!descriptor?.title) return descriptor;
@@ -714,113 +717,6 @@ function renderMetricStrip(body, section) {
   body.append(wrap);
 }
 
-function renderInsightGrid(body, section) {
-  const wrap = sectionWrap(section, "codexmod-insights-section");
-  const grid = el("div", { className: "codexmod-insights" });
-  for (const item of section.items || section.insights || []) {
-    grid.append(el("article", { className: "codexmod-insight" }, [
-      el("h5", {}, [item.title || item.label || "Insight"]),
-      el("p", {}, [item.body || item.text || item.value || ""]),
-    ]));
-  }
-  wrap.append(grid);
-  body.append(wrap);
-}
-
-function renderBars(body, section) {
-  const items = section.items || section.bars || section.steps || [];
-  const max = Math.max(1, ...items.map((item) => Number(item.value) || 0));
-  const wrap = sectionWrap(section, "codexmod-bars-section");
-  for (const item of items) {
-    wrap.append(el("div", { className: `codexmod-bar-row ${toneClass(item.tone || item.color)}` }, [
-      el("span", { className: "codexmod-bar-label" }, [item.label || item.name || "Item"]),
-      el("span", { className: "codexmod-bar-track" }, [
-        el("span", {
-          className: "codexmod-bar-fill",
-          style: `width:${Math.max(3, ((Number(item.value) || 0) / max) * 100)}%`,
-        }),
-      ]),
-      el("strong", { className: "codexmod-bar-value" }, [String(item.value ?? "")]),
-    ]));
-  }
-  body.append(wrap);
-}
-
-function renderProgressBars(body, section) {
-  const items = section.items || [];
-  const wrap = sectionWrap(section, "codexmod-progress-section");
-  for (const item of items) {
-    const value = Math.max(0, Math.min(100, Number(item.percent ?? item.value) || 0));
-    wrap.append(el("div", { className: `codexmod-progress ${toneClass(item.tone || item.color)}` }, [
-      el("div", { className: "codexmod-progress-head" }, [
-        el("span", {}, [item.label || item.name || "Progress"]),
-        el("strong", {}, [`${value}%`]),
-      ]),
-      el("span", { className: "codexmod-progress-track" }, [
-        el("span", { className: "codexmod-progress-fill", style: `width:${value}%` }),
-      ]),
-      item.body ? el("p", {}, [item.body]) : null,
-    ]));
-  }
-  body.append(wrap);
-}
-
-function renderNumberedCallouts(body, section) {
-  const wrap = sectionWrap(section, "codexmod-numbered-section");
-  for (const [index, item] of (section.items || []).entries()) {
-    wrap.append(el("article", { className: `codexmod-numbered ${toneClass(item.tone || item.color || item.status)}` }, [
-      el("div", { className: "codexmod-numbered-head" }, [
-        el("span", { className: "codexmod-rank" }, [`#${item.rank || index + 1}`]),
-        el("strong", { className: "codexmod-numbered-value" }, [String(item.value ?? item.metric ?? "")]),
-        el("h5", {}, [item.title || item.label || "Finding"]),
-      ]),
-      item.body ? el("p", {}, [item.body]) : null,
-      item.recommendation ? el("div", { className: "codexmod-recommendation-box" }, [item.icon || "Lightbulb", " ", item.recommendation]) : null,
-    ]));
-  }
-  body.append(wrap);
-}
-
-function renderRecordCards(body, section) {
-  const wrap = sectionWrap(section, "codexmod-records-section");
-  const grid = el("div", { className: "codexmod-records" });
-  for (const record of section.items || section.records || []) {
-    grid.append(el("article", { className: `codexmod-record ${toneClass(record.tone || record.status)}` }, [
-      el("div", { className: "codexmod-record-head" }, [
-        el("span", { className: "codexmod-avatar" }, [record.avatar || initials(record.title || record.name || "?")]),
-        el("div", {}, [
-          el("h5", {}, [record.title || record.name || "Record"]),
-          record.subtitle ? el("p", {}, [record.subtitle]) : null,
-        ]),
-      ]),
-      el("div", { className: "codexmod-record-fields" }, (record.fields || []).map((field) =>
-        el("div", {}, [el("span", {}, [field.label || field.key || "Field"]), el("strong", {}, [field.value ?? ""])]),
-      )),
-      record.pills ? el("div", { className: "codexmod-pills" }, record.pills.map((pill) =>
-        el("span", { className: `codexmod-pill ${toneClass(pill.tone || pill.color)}` }, [pill.label || pill]),
-      )) : null,
-    ]));
-  }
-  wrap.append(grid);
-  body.append(wrap);
-}
-
-function renderComparisonCards(body, section) {
-  const wrap = sectionWrap(section, "codexmod-comparison-section");
-  const grid = el("div", { className: "codexmod-comparisons" });
-  for (const item of section.items || section.cards || []) {
-    grid.append(el("article", { className: `codexmod-comparison ${toneClass(item.tone || item.color)} ${item.featured || item.popular ? "is-featured" : ""}` }, [
-      item.badge ? el("span", { className: `codexmod-pill ${toneClass(item.tone || item.color)}` }, [item.badge]) : null,
-      el("h5", {}, [item.title || item.label || "Option"]),
-      item.price || item.value ? el("strong", { className: "codexmod-comparison-value" }, [item.price || item.value]) : null,
-      item.body ? el("p", {}, [item.body]) : null,
-      item.features ? el("ul", {}, item.features.map((feature) => el("li", {}, [feature]))) : null,
-    ]));
-  }
-  wrap.append(grid);
-  body.append(wrap);
-}
-
 function renderTimeline(body, section) {
   const wrap = sectionWrap(section, "codexmod-timeline-section");
   const list = el("ol", { className: "codexmod-timeline" });
@@ -838,37 +734,6 @@ function renderTimeline(body, section) {
   body.append(wrap);
 }
 
-function renderPullQuote(body, section) {
-  const wrap = sectionWrap(section, "codexmod-pullquote-section");
-  wrap.append(el("blockquote", { className: `codexmod-pullquote ${toneClass(section.tone || section.color)}` }, [
-    el("p", {}, [section.quote || section.body || section.text || ""]),
-    section.source ? el("cite", {}, [section.source]) : null,
-  ]));
-  body.append(wrap);
-}
-
-function renderTagCloud(body, section) {
-  const wrap = sectionWrap(section, "codexmod-tags-section");
-  wrap.append(el("div", { className: "codexmod-tag-cloud" }, (section.items || section.tags || []).map((tag) =>
-    el("span", { className: `codexmod-pill ${toneClass(tag.tone || tag.color)}` }, [tag.label || tag]),
-  )));
-  body.append(wrap);
-}
-
-function renderAlertBlocks(body, section) {
-  const wrap = sectionWrap(section, "codexmod-alerts-section");
-  for (const item of section.items || section.alerts || []) {
-    wrap.append(el("article", { className: `codexmod-alert ${toneClass(item.tone || item.status || item.color)}` }, [
-      el("span", { className: "codexmod-alert-icon" }, [item.icon || alertIcon(item.tone || item.status)]),
-      el("div", {}, [
-        el("strong", {}, [item.title || item.label || "Note"]),
-        item.body ? el("p", {}, [item.body]) : null,
-      ]),
-    ]));
-  }
-  body.append(wrap);
-}
-
 function renderTable(body, section) {
   const columns = section.columns || [];
   const table = el("table", { className: "codexmod-table" }, [
@@ -877,22 +742,6 @@ function renderTable(body, section) {
   ]);
   const wrap = sectionWrap(section, "codexmod-table-section");
   wrap.append(table);
-  body.append(wrap);
-}
-
-function renderRecommendations(body, section) {
-  const wrap = sectionWrap(section, "codexmod-recommendations-section");
-  wrap.append(el("ul", { className: "codexmod-recommendations" }, (section.items || []).map((item) =>
-    el("li", {}, [el("strong", {}, [item.title || item.label || "Recommendation"]), item.body ? el("p", {}, [item.body]) : null]),
-  )));
-  body.append(wrap);
-}
-
-function renderActions(body, section) {
-  const wrap = sectionWrap(section, "codexmod-actions-section");
-  wrap.append(el("div", { className: "codexmod-actions" }, (section.items || section.actions || []).map((item) =>
-    button(item.label || item.text || "Action", () => insertPrompt(item.prompt || item.text || item.label || "")),
-  )));
   body.append(wrap);
 }
 

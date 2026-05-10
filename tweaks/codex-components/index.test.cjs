@@ -111,12 +111,35 @@ const DECLARATIVE_COMPONENT_CASES = [
   },
 ];
 
+const OWNED_REGISTRY_COMPONENT_TYPES = [
+  "insights",
+  "funnel",
+  "bars",
+  "progress",
+  "callouts",
+  "records",
+  "alerts",
+  "comparison",
+  "quote",
+  "tags",
+  "recommendations",
+  "actions",
+];
+
 const COMPONENT_TYPES = [
   "group",
   ...DECLARATIVE_COMPONENT_CASES.map((component) => component.type),
   "choices",
   "html",
 ];
+
+test("registry includes every owned declarative component renderer", () => {
+  const registry = requireTweakModule("./core/registry.js", __dirname);
+
+  for (const type of OWNED_REGISTRY_COMPONENT_TYPES) {
+    assert.equal(typeof registry.getComponentRenderer(type), "function", `${type} renderer should be registered`);
+  }
+});
 
 test("renders every declarative component type directly", () => {
   for (const component of DECLARATIVE_COMPONENT_CASES) {
@@ -1378,6 +1401,7 @@ function loadTweakForTest(context) {
     exports: module.exports,
     process,
     console,
+    require: (request) => requireTweakModule(request, __dirname),
     URL,
     setTimeout,
     clearTimeout,
@@ -1386,4 +1410,29 @@ function loadTweakForTest(context) {
   });
   script.runInNewContext(context);
   return module.exports;
+}
+
+function requireTweakModule(request, baseDir) {
+  if (!request.startsWith(".")) return require(request);
+  const filename = resolveTweakModule(request, baseDir);
+  const module = { exports: {} };
+  const source = readFileSync(filename, "utf8");
+  const localRequire = (nextRequest) => requireTweakModule(nextRequest, join(filename, ".."));
+  const wrapper = new vm.Script(
+    `(function(require, module, exports, __filename, __dirname) {\n${source}\n})`,
+    { filename },
+  );
+  wrapper.runInThisContext()(localRequire, module, module.exports, filename, join(filename, ".."));
+  return module.exports;
+}
+
+function resolveTweakModule(request, baseDir) {
+  const path = join(baseDir, request);
+  if (path.endsWith(".js")) return path;
+  try {
+    readFileSync(`${path}.js`, "utf8");
+    return `${path}.js`;
+  } catch {
+    return join(path, "index.js");
+  }
 }
