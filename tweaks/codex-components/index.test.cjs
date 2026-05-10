@@ -1,0 +1,1056 @@
+const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const test = require("node:test");
+const vm = require("node:vm");
+const { JSDOM } = require("jsdom");
+
+process.env.NODE_ENV = "test";
+const tweakContext = {};
+const tweak = loadTweakForTest(tweakContext);
+const {
+  createState,
+  mountBlock,
+  renderDashboard,
+  renderIntake,
+  renderShowWidget,
+  mountShowWidgetFrame,
+  installRenderer,
+  enhanceNativeTables,
+  enhanceLinksAndMedia,
+  buildWidgetDocument,
+  normalizeDescriptor,
+  uniqueBlocks,
+  scanDocument,
+  hasNearbyNativeRender,
+  shouldDeferToNativeRenderer,
+  loadSettings,
+} = tweak.__test;
+
+const ALL_DASHBOARD_SECTIONS = [
+  {
+    type: "metric_strip",
+    items: [{ label: "Revenue", value: "$42K", delta: "12%", trend: "up", sparkline: [1, 3, 2, 5] }],
+    expected: ".codexmod-metric",
+  },
+  {
+    type: "insight_grid",
+    items: [{ title: "Signal", body: "The offer is clear." }],
+    expected: ".codexmod-insight",
+  },
+  {
+    type: "funnel",
+    steps: [{ label: "Visit", value: 100 }, { label: "Buy", value: 14 }],
+    expected: ".codexmod-bar-row",
+  },
+  {
+    type: "bar_chart",
+    items: [{ label: "A", value: 8 }, { label: "B", value: 4 }],
+    expected: ".codexmod-bar-row",
+  },
+  {
+    type: "progress_bars",
+    items: [{ label: "Done", percent: 72, body: "Almost there." }],
+    expected: ".codexmod-progress",
+  },
+  {
+    type: "numbered_callouts",
+    items: [{ rank: 1, value: "High", title: "Risk", body: "Needs review.", recommendation: "Fix first." }],
+    expected: ".codexmod-numbered",
+  },
+  {
+    type: "record_cards",
+    items: [{ title: "Ada Lovelace", subtitle: "Lead", fields: [{ label: "Status", value: "Active" }], pills: ["VIP"] }],
+    expected: ".codexmod-record",
+  },
+  {
+    type: "alert_blocks",
+    items: [{ title: "Warning", body: "Watch this.", tone: "amber" }],
+    expected: ".codexmod-alert",
+  },
+  {
+    type: "comparison_cards",
+    items: [{ title: "Pro", value: "$20", body: "Best fit.", features: ["Fast"], featured: true }],
+    expected: ".codexmod-comparison",
+  },
+  {
+    type: "timeline",
+    items: [{ title: "Launch", body: "Ship it.", status: "done", meta: "Today" }],
+    expected: ".codexmod-timeline-item",
+  },
+  {
+    type: "pull_quote",
+    quote: "This is the line.",
+    source: "Tester",
+    expected: ".codexmod-pullquote",
+  },
+  {
+    type: "tag_cloud",
+    items: ["analytics", { label: "sales", tone: "teal" }],
+    expected: ".codexmod-tag-cloud .codexmod-pill",
+  },
+  {
+    type: "table",
+    columns: [{ key: "name", label: "Name" }, { key: "score", label: "Score" }],
+    rows: [{ name: "Alpha", score: 10 }],
+    expected: ".codexmod-table tbody tr",
+  },
+  {
+    type: "recommendations",
+    items: [{ title: "Ship", body: "Do the smallest useful version." }],
+    expected: ".codexmod-recommendations li",
+  },
+  {
+    type: "action_chips",
+    items: [{ label: "Continue", prompt: "Continue with the next step." }],
+    expected: ".codexmod-actions button",
+  },
+];
+
+test("renders every dashboard section type", () => {
+  for (const section of ALL_DASHBOARD_SECTIONS) {
+    setupDom();
+    const state = testState();
+    const target = document.createElement("div");
+    document.body.append(target);
+    const descriptor = {
+      type: "dashboard",
+      version: 1,
+      title: "Smoke Dashboard",
+      sections: [section],
+    };
+
+    renderDashboard(target, descriptor, JSON.stringify(descriptor), state);
+
+    assert.ok(document.querySelector(section.expected), `${section.type} did not render ${section.expected}`);
+  }
+});
+
+test("renders intake cards and html widgets through direct renderers", () => {
+  setupDom();
+  const state = testState();
+  const intakeTarget = document.createElement("div");
+  document.body.append(intakeTarget);
+
+  renderIntake(intakeTarget, {
+    type: "intake",
+    version: 1,
+    title: "Choose",
+    options: [{ label: "Option A", prompt: "Pick A" }],
+  }, "{}", state);
+  assert.ok(document.querySelector(".codexmod-intake-option"));
+
+  mountJson(state, {
+    type: "html_widget",
+    version: 1,
+    title: "Frame",
+    html: "<div>Inside iframe</div>",
+    height: 180,
+  });
+  assert.equal(document.querySelector(".codexmod-widget-frame").style.height, "180px");
+});
+
+test("intake does not repeat the title as a second question heading", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  renderIntake(target, {
+    type: "intake",
+    version: 1,
+    title: "Choose a Test Path",
+    subtitle: "Pick one option to continue the component test.",
+    options: [{ label: "Inspect", prompt: "Inspect" }],
+  }, "{}", state);
+
+  assert.equal(document.querySelectorAll(".codexmod-intake-question").length, 0);
+  assert.equal(document.querySelector(".codexmod-component-title").textContent, "Choose a Test Path");
+});
+
+test("html widget frames start in scroll-safe mode until interaction is enabled", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "html_widget",
+    version: 1,
+    title: "Frame",
+    html: "<button>Inside iframe</button>",
+    height: 180,
+  });
+
+  const frame = document.querySelector(".codexmod-widget-frame");
+  const toggle = document.querySelector(".codexmod-widget-guard button");
+  assert.equal(frame.style.pointerEvents, "none");
+  assert.equal(toggle.textContent, "Enable interaction");
+
+  toggle.click();
+
+  assert.equal(frame.style.pointerEvents, "auto");
+  assert.equal(toggle.textContent, "Disable interaction");
+});
+
+test("does not defer component rendering because Codex++ owns these blocks", () => {
+  assert.equal(shouldDeferToNativeRenderer({ type: "dashboard" }), false);
+  assert.equal(shouldDeferToNativeRenderer({ type: "intake" }), false);
+  assert.equal(shouldDeferToNativeRenderer({ type: "show_widget" }), false);
+  assert.equal(shouldDeferToNativeRenderer({ type: "html_widget" }), false);
+});
+
+test("renders show_widget blocks through the local scroll-safe iframe", () => {
+  setupDom();
+  const state = testState();
+  const source = document.createElement("pre");
+  document.body.append(source);
+
+  mountBlock(state, {
+    node: source,
+    language: "show_widget",
+    raw: JSON.stringify({
+      title: "Native",
+      widget_code: "<div>Native widget</div>",
+    }),
+    hideSource: true,
+  });
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  assert.ok(frame);
+  assert.equal(frame.style.pointerEvents, "none");
+  assert.equal(document.querySelector(".codexmod-widget-guard button").textContent, "Enable interaction");
+  assert.equal(source.style.display, "none");
+});
+
+test("does not render its own component when a native visual render is nearby", () => {
+  setupDom();
+  const state = testState();
+  const native = document.createElement("section");
+  native.setAttribute("role", "group");
+  native.setAttribute("data-native-render", "intake");
+  native.innerHTML = "<h2>Native intake</h2><button>Choice</button>";
+  const source = document.createElement("pre");
+  document.body.append(native, source);
+
+  assert.equal(hasNearbyNativeRender(source), true);
+  mountBlock(state, {
+    node: source,
+    language: "codex-component",
+    raw: JSON.stringify({
+      type: "intake",
+      version: 1,
+      title: "Guided Intake Card",
+      options: [{ label: "One", prompt: "One" }],
+    }),
+    hideSource: true,
+  });
+
+  assert.equal(document.querySelector("[data-codexmod-component-mount]"), null);
+  assert.equal(source.style.display, "");
+});
+
+test("does not render its own component when a native visual render is elsewhere in the same message", () => {
+  setupDom(`
+    <main>
+      <article data-message-author-role="assistant">
+        <section role="group" data-native-render="intake" class="codex-native-intake">
+          <h2>Native intake</h2>
+          <button>Choice</button>
+        </section>
+        <p>Some streamed text between the native surface and source.</p>
+        <div>
+          <pre class="language-codex-component">{"type":"intake","version":1,"title":"Guided Intake Card","options":[{"label":"One","prompt":"One"}]}</pre>
+        </div>
+      </article>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 0);
+  assert.equal(document.querySelector("pre").style.display, "");
+});
+
+test("renders show_widget when the same message has an unrelated native dashboard", () => {
+  setupDom(`
+    <main>
+      <article data-message-author-role="assistant">
+        <section role="group" data-native-render="dashboard" class="codex-native-dashboard">
+          <h2>Native dashboard</h2>
+          <strong>42</strong>
+        </section>
+        <pre class="language-show_widget">{"title":"Widget","loading_messages":["Rendering..."],"widget_code":"<button>Inside iframe</button>"}</pre>
+      </article>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.ok(document.querySelector(".codexmod-show-widget-frame"));
+});
+
+test("does not mount the same source node twice across rescans", () => {
+  setupDom(`
+    <main>
+      <pre class="language-codex-component">{"type":"html_widget","version":1,"title":"Choose","html":"<div>One widget</div>"}</pre>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+  scanDocument(state);
+
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+});
+
+test("rerenders the same component JSON after Codex++ replaces the chat DOM", () => {
+  const raw = "{\"type\":\"html_widget\",\"version\":1,\"title\":\"Choose\",\"html\":\"<div>One widget</div>\"}";
+  setupDom(`<main><pre class="language-codex-component">${raw}</pre></main>`);
+  const state = testState();
+
+  scanDocument(state);
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+
+  document.querySelector("main").innerHTML = `<pre class="language-codex-component">${raw}</pre>`;
+  scanDocument(state);
+
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+  assert.equal(document.querySelector("pre").style.display, "none");
+});
+
+test("does not hide a streaming message container that later receives more blocks", () => {
+  const firstRaw = "{\"type\":\"dashboard\",\"version\":1,\"title\":\"First\",\"sections\":[]}";
+  const secondRaw = "{\"type\":\"intake\",\"version\":1,\"title\":\"Second\",\"options\":[{\"label\":\"Go\",\"prompt\":\"Go\"}]}";
+  setupDom(`
+    <main>
+      <article data-message-author-role="assistant">
+        <div class="streaming-markdown">
+          <pre class="language-codex-component">${firstRaw}</pre>
+        </div>
+      </article>
+    </main>
+  `);
+  const state = testState();
+  const streaming = document.querySelector(".streaming-markdown");
+
+  scanDocument(state);
+  streaming.insertAdjacentHTML("beforeend", `<pre class="language-codex-component">${secondRaw}</pre>`);
+  scanDocument(state);
+
+  assert.equal(streaming.style.display, "");
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 2);
+  assert.ok(document.querySelector(".codexmod-intake"));
+});
+
+test("hides the native code fence wrapper without hiding the message container", () => {
+  const raw = "{\"type\":\"dashboard\",\"version\":1,\"title\":\"First\",\"sections\":[]}";
+  setupDom(`
+    <main>
+      <article data-message-author-role="assistant">
+        <div class="streaming-markdown">
+          <div class="native-code-shell">
+            <div class="native-language-label">codex</div>
+            <button aria-label="Copy code">copy</button>
+            <pre class="language-codex-component">${raw}</pre>
+          </div>
+        </div>
+      </article>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  const streaming = document.querySelector(".streaming-markdown");
+  const shell = document.querySelector(".native-code-shell");
+  assert.equal(streaming.style.display, "");
+  assert.equal(shell.style.display, "none");
+  assert.equal(shell.nextElementSibling?.dataset.codexmodComponentMount, "true");
+});
+
+test("hides nested native code card chrome around component blocks", () => {
+  const raw = "{\"type\":\"dashboard\",\"version\":1,\"title\":\"First\",\"sections\":[]}";
+  setupDom(`
+    <main>
+      <article data-message-author-role="assistant">
+        <div class="streaming-markdown">
+          <div class="native-code-card">
+            <div class="native-code-header">
+              <span>codex</span>
+              <button aria-label="Copy code">copy</button>
+            </div>
+            <div class="native-code-body">
+              <pre class="language-codex-component">${raw}</pre>
+            </div>
+          </div>
+        </div>
+      </article>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  const streaming = document.querySelector(".streaming-markdown");
+  const card = document.querySelector(".native-code-card");
+  const body = document.querySelector(".native-code-body");
+  assert.equal(streaming.style.display, "");
+  assert.equal(card.style.display, "none");
+  assert.equal(body.style.display, "");
+  assert.equal(card.nextElementSibling?.dataset.codexmodComponentMount, "true");
+});
+
+test("show_widget has a scroll-safe default frame height", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    widget_code: "<section><h1>Widget</h1><button>One</button><button>Two</button></section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  assert.equal(frame.style.height, "520px");
+  assert.equal(scrollbox.style.height, "520px");
+  assert.equal(frame.getAttribute("scrolling"), "yes");
+  assert.equal(frame.style.pointerEvents, "none");
+  assert.equal(document.querySelector(".codexmod-widget-guard button").textContent, "Enable interaction");
+  assert.match(frame.srcdoc, /overflow:hidden/);
+  assert.match(frame.srcdoc, /typeof ResizeObserver === "function"/);
+  assert.match(frame.srcdoc, /setInterval/);
+});
+
+test("show_widget renders its iframe immediately instead of swapping a lazy placeholder", () => {
+  setupDom();
+  global.IntersectionObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  tweakContext.IntersectionObserver = global.IntersectionObserver;
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  renderShowWidget(target, {
+    type: "show_widget",
+    version: 1,
+    loading_messages: ["Rendering..."],
+    widget_code: "<section>Immediate widget</section>",
+  }, "{}", state);
+
+  assert.ok(document.querySelector(".codexmod-show-widget-frame"));
+  assert.equal(document.querySelector(".codexmod-widget-loading"), null);
+});
+
+test("show_widget does not shrink below its default height after resize messages", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    widget_code: "<section>Short report</section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  window.dispatchEvent(new window.MessageEvent("message", {
+    source: frame.contentWindow,
+    data: { method: "ui/notifications/size-changed", params: { height: 90 } },
+  }));
+
+  assert.equal(frame.style.height, "520px");
+  assert.equal(scrollbox.style.height, "520px");
+});
+
+test("show_widget caps oversized content in a parent scrollbox", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    height: 1280,
+    widget_code: "<section>Tall gallery</section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  assert.equal(frame.style.height, "720px");
+  assert.equal(scrollbox.style.height, "720px");
+
+  window.dispatchEvent(new window.MessageEvent("message", {
+    source: frame.contentWindow,
+    data: { method: "ui/notifications/size-changed", params: { height: 1600 } },
+  }));
+
+  assert.equal(frame.style.height, "1600px");
+  assert.equal(scrollbox.style.height, "720px");
+  assert.ok(scrollbox.classList.contains("codexmod-widget-scrollbox-scrollable"));
+});
+
+test("show_widget forwards edge wheel events to the nearest scroll parent", () => {
+  setupDom("<main><section class=\"scroll-host\"><div id=\"target\"></div></section></main>");
+  const host = document.querySelector(".scroll-host");
+  Object.defineProperties(host, {
+    scrollHeight: { value: 1200, configurable: true },
+    clientHeight: { value: 400, configurable: true },
+  });
+  host.style.overflowY = "auto";
+  const state = testState();
+  const target = document.querySelector("#target");
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    widget_code: "<section>Scrollable widget</section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  window.dispatchEvent(new window.MessageEvent("message", {
+    source: frame.contentWindow,
+    data: { method: "codex/scroll-parent", params: { deltaY: 96 } },
+  }));
+
+  assert.equal(host.scrollTop, 96);
+  assert.match(frame.srcdoc, /codex\/scroll-parent/);
+});
+
+test("show_widget iframe wheel handler delegates all wheel deltas to the parent scrollbox", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    height: 1280,
+    widget_code: "<section>Scrollable widget</section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  assert.match(frame.srcdoc, /event\.preventDefault\(\)/);
+  assert.match(frame.srcdoc, /passive: false/);
+  assert.doesNotMatch(frame.srcdoc, /atTop|atBottom/);
+});
+
+test("show_widget forwarded wheel deltas move the parent scrollbox up and down", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    height: 1280,
+    widget_code: "<section>Scrollable widget</section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  Object.defineProperties(scrollbox, {
+    scrollHeight: { value: 1600, configurable: true },
+    clientHeight: { value: 720, configurable: true },
+  });
+
+  window.dispatchEvent(new window.MessageEvent("message", {
+    source: frame.contentWindow,
+    data: { method: "codex/scroll-parent", params: { deltaY: 500 } },
+  }));
+  assert.equal(scrollbox.scrollTop, 500);
+
+  window.dispatchEvent(new window.MessageEvent("message", {
+    source: frame.contentWindow,
+    data: { method: "codex/scroll-parent", params: { deltaY: -180 } },
+  }));
+  assert.equal(scrollbox.scrollTop, 320);
+});
+
+test("show_widget scroll-safe mode scrolls the parent scrollbox under the pointer", () => {
+  setupDom();
+  const state = testState();
+  const target = document.createElement("div");
+  document.body.append(target);
+
+  mountShowWidgetFrame(target, {
+    type: "show_widget",
+    version: 1,
+    height: 1280,
+    widget_code: "<section>Tall gallery</section>",
+  }, state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  const scrollbox = document.querySelector(".codexmod-widget-scrollbox");
+  Object.defineProperties(scrollbox, {
+    scrollHeight: { value: 1600, configurable: true },
+    clientHeight: { value: 720, configurable: true },
+  });
+  scrollbox.getBoundingClientRect = () => ({
+    left: 20,
+    top: 40,
+    right: 620,
+    bottom: 760,
+    width: 600,
+    height: 720,
+  });
+  frame.style.pointerEvents = "none";
+
+  const event = new window.WheelEvent("wheel", {
+    deltaY: 120,
+    clientX: 100,
+    clientY: 100,
+    bubbles: true,
+    cancelable: true,
+  });
+  document.dispatchEvent(event);
+
+  assert.equal(scrollbox.scrollTop, 120);
+  assert.equal(event.defaultPrevented, true);
+});
+
+test("install renderer removes stale component mounts from a previous reload", () => {
+  setupDom(`
+    <main>
+      <pre data-codexmod-component-source="true" style="display:none">source</pre>
+      <div data-codexmod-component-mount="true">stale</div>
+    </main>
+  `);
+  const state = testState();
+
+  installRenderer(state);
+
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 0);
+  assert.equal(document.querySelector("[data-codexmod-component-source]"), null);
+  assert.equal(document.querySelector("pre").style.display, "");
+  disposeAll(state);
+});
+
+test("install renderer strips leaked prompt contracts from composer text", () => {
+  setupDom(`
+    <main></main>
+    <section data-testid="composer">
+      <textarea>Ask for a video
+
+<!-- Codex Components prompt contract:
+Do not leak this.
+--></textarea>
+    </section>
+  `);
+  const state = testState();
+
+  installRenderer(state);
+
+  assert.equal(document.querySelector("textarea").value, "Ask for a video");
+  disposeAll(state);
+});
+
+test("link previews and YouTube previews are enabled by default", () => {
+  setupDom(`
+    <main>
+      <p><a href="https://youtu.be/dQw4w9WgXcQ">Video</a></p>
+      <p><a href="https://example.com/report">Report</a></p>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.ok(document.querySelector(".codexmod-video-card"));
+  assert.equal(document.querySelectorAll("[data-codexmod-link-preview='true']").length, 2);
+});
+
+test("polishes native tables and renders link previews without touching table links", () => {
+  setupDom("<main><p><a href=\"https://example.com/report\">Report</a></p><table><tr><td><a href=\"https://example.com/in-table\">Cell</a></td></tr></table></main>");
+  const state = testState();
+  state.settings.tablePolish = true;
+  state.settings.linkPreviews = true;
+
+  enhanceNativeTables(state);
+  enhanceLinksAndMedia(state);
+
+  assert.ok(document.querySelector("table").classList.contains("codexmod-native-table"));
+  assert.equal(document.querySelectorAll("[data-codexmod-link-preview='true']").length, 1);
+  assert.match(document.querySelector("[data-codexmod-link-preview='true']").textContent, /example.com/);
+});
+
+test("renders YouTube links as same-surface thumbnail previews with title overlays", () => {
+  setupDom("<main><p><a href=\"https://youtu.be/dQw4w9WgXcQ\">OpenAI: Introducing GPT-4o</a></p></main>");
+  const state = testState();
+  state.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(state);
+
+  const card = document.querySelector(".codexmod-video-card");
+  const title = card.querySelector(".codexmod-video-title");
+  assert.ok(card);
+  assert.ok(card.classList.contains("codexmod-video-card-preview"));
+  assert.ok(card.querySelector(".codexmod-video-surface.codexmod-video-thumb"));
+  assert.ok(card.querySelector(".codexmod-video-overlay"));
+  assert.equal(title.textContent, "OpenAI: Introducing GPT-4o");
+  assert.equal(title.getAttribute("href"), "https://youtu.be/dQw4w9WgXcQ");
+  assert.equal(card.querySelector(".codexmod-video-actions"), null);
+  assert.equal(card.querySelector(".codexmod-video-framebar"), null);
+});
+
+test("hides standalone YouTube link rows after rendering the preview card", () => {
+  setupDom("<main><p id=\"source\"><svg aria-hidden=\"true\"></svg><a href=\"https://youtu.be/dQw4w9WgXcQ\">OpenAI: Introducing GPT-4o</a></p></main>");
+  const state = testState();
+  state.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(state);
+
+  assert.equal(document.querySelector("#source").style.display, "none");
+  assert.equal(document.querySelector(".codexmod-video-title").textContent, "OpenAI: Introducing GPT-4o");
+});
+
+test("upgrades legacy YouTube video cards left behind by older tweak builds", () => {
+  setupDom(`
+    <main>
+      <p id="source"><a href="https://youtu.be/dQw4w9WgXcQ">OpenAI: Introducing GPT-4o</a></p>
+      <section class="codexmod-link-card codexmod-video-card" data-codexmod-link-preview="true">
+        <div class="codexmod-video-framebar">
+          <button>Hide video</button>
+          <a href="https://youtu.be/dQw4w9WgXcQ">Open on YouTube</a>
+        </div>
+        <iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1"></iframe>
+      </section>
+    </main>
+  `);
+  const state = testState();
+  state.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(state);
+
+  const card = document.querySelector(".codexmod-video-card");
+  assert.ok(card.classList.contains("codexmod-video-card-preview"));
+  assert.ok(card.querySelector(".codexmod-video-surface.codexmod-video-thumb"));
+  assert.equal(card.querySelector(".codexmod-video-framebar"), null);
+  assert.equal(card.textContent.includes("Hide video"), false);
+  assert.equal(document.querySelector("#source").style.display, "none");
+});
+
+test("YouTube preview opens as a normal link instead of swapping to an iframe", () => {
+  setupDom("<main><p><a href=\"https://youtu.be/dQw4w9WgXcQ\">OpenAI: Introducing GPT-4o</a></p></main>");
+  const state = testState();
+  state.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(state);
+  const card = document.querySelector(".codexmod-video-card");
+  const previewSurface = card.querySelector(".codexmod-video-surface");
+
+  previewSurface.click();
+
+  assert.equal(previewSurface.tagName, "A");
+  assert.equal(previewSurface.getAttribute("href"), "https://youtu.be/dQw4w9WgXcQ");
+  assert.equal(previewSurface.getAttribute("target"), "_blank");
+  assert.ok(card.classList.contains("codexmod-video-card-preview"));
+  assert.equal(card.querySelector("iframe"), null);
+  assert.equal(card.querySelector(".codexmod-video-actions"), null);
+  assert.equal(card.querySelector(".codexmod-video-framebar"), null);
+});
+
+test("legacy loaded YouTube player cards are replaced with link previews", () => {
+  setupDom(`
+    <main>
+      <p id="source" style="display:none"><a href="https://youtu.be/dQw4w9WgXcQ">OpenAI: Introducing GPT-4o</a></p>
+      <section class="codexmod-link-card codexmod-video-card codexmod-video-card-loaded" data-codexmod-link-preview="true">
+        <div class="codexmod-video-surface codexmod-video-player">
+          <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1"></iframe>
+        </div>
+      </section>
+    </main>
+  `);
+  const state = testState();
+  state.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(state);
+  const card = document.querySelector(".codexmod-video-card");
+
+  assert.ok(card.classList.contains("codexmod-video-card-preview"));
+  assert.ok(card.querySelector(".codexmod-video-surface.codexmod-video-thumb"));
+  assert.equal(card.querySelector("iframe"), null);
+  assert.equal(document.querySelector("#source").style.display, "none");
+});
+
+test("renders YouTube live links and does not enhance composer links", () => {
+  setupDom(`
+    <main>
+      <p><a href="https://www.youtube.com/live/dQw4w9WgXcQ?si=abc">Live</a></p>
+      <section data-testid="composer"><div contenteditable="true"><a href="https://youtu.be/abc12345678">Draft</a></div></section>
+    </main>
+  `);
+  const state = testState();
+  state.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(state);
+
+  assert.equal(document.querySelectorAll(".codexmod-video-card").length, 1);
+  assert.match(document.querySelector(".codexmod-video-thumb img").getAttribute("src"), /dQw4w9WgXcQ/);
+});
+
+test("does not duplicate YouTube cards after renderer state is recreated", () => {
+  setupDom("<main><p><a href=\"https://youtu.be/dQw4w9WgXcQ\">Video</a></p></main>");
+  const first = testState();
+  first.settings.mediaEmbeds = true;
+  const second = testState();
+  second.settings.mediaEmbeds = true;
+
+  enhanceLinksAndMedia(first);
+  enhanceLinksAndMedia(second);
+
+  assert.equal(document.querySelectorAll(".codexmod-video-card").length, 1);
+});
+
+test("normalizes show_widget descriptors and sanitizes disallowed widget APIs", () => {
+  setupDom();
+  const normalized = normalizeDescriptor(JSON.stringify({ title: "Demo", widget_code: "<div>Hi</div>" }), "show_widget");
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.descriptor.type, "show_widget");
+  assert.equal(normalized.descriptor.version, 1);
+
+  const html = buildWidgetDocument(`
+    <script src="https://evil.example/app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <button onclick="localStorage.setItem('x','y');sessionStorage.clear()">Go</button>
+  `);
+  assert.doesNotMatch(html, /evil\.example/);
+  assert.match(html, /cdn\.jsdelivr\.net/);
+  assert.doesNotMatch(html, /localStorage\.setItem/);
+  assert.doesNotMatch(html, /sessionStorage\.clear/);
+});
+
+test("deduplicates identical component blocks discovered through multiple DOM paths", () => {
+  const raw = JSON.stringify({ type: "show_widget", version: 1, widget_code: "<div>Hi</div>" });
+  const blocks = uniqueBlocks([
+    { language: "show_widget", raw },
+    { language: "show_widget", raw },
+    { language: "codex-component", raw },
+  ]);
+
+  assert.equal(blocks.length, 2);
+  assert.deepEqual(blocks.map((block) => block.language), ["show_widget", "codex-component"]);
+});
+
+test("does not render component fences from composer surfaces", () => {
+  setupDom(`
+    <main>
+      <section data-testid="composer">
+        <div contenteditable="true">\`\`\`codex-component
+{"type":"dashboard","version":1,"title":"Draft","sections":[{"type":"metric_strip","items":[{"label":"Draft","value":"Nope"}]}]}
+\`\`\`</div>
+      </section>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 0);
+});
+
+test("renders dashboard blocks through the local renderer by default", () => {
+  setupDom(`
+    <main>
+      <pre class="language-codex-component">{"type":"dashboard","version":1,"title":"Native","sections":[{"type":"metric_strip","items":[{"label":"One","value":"1"}]}]}</pre>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.equal(state.settings.componentBlocks, false);
+  assert.ok(document.querySelector(".codexmod-dashboard"));
+});
+
+test("renders intake blocks through the local renderer by default", () => {
+  setupDom(`
+    <main>
+      <pre class="language-codex">{"type":"intake","version":1,"title":"Guided Intake Card","question":"What kind of component should Codex create next?","options":[{"label":"Analytics dashboard","prompt":"Create an analytics dashboard."}]}</pre>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  assert.equal(state.settings.componentBlocks, false);
+  assert.ok(document.querySelector(".codexmod-intake-option"));
+});
+
+test("renders show_widget blocks through the local renderer by default", () => {
+  setupDom(`
+    <main>
+      <pre class="language-show_widget">{"title":"Widget","loading_messages":["Rendering..."],"widget_code":"<button>Inside iframe</button>"}</pre>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  const frame = document.querySelector(".codexmod-show-widget-frame");
+  assert.ok(frame);
+  assert.equal(state.settings.componentBlocks, false);
+  assert.equal(frame.style.pointerEvents, "none");
+});
+
+test("does not mount incomplete streaming codex-widget JSON and retries when complete", () => {
+  setupDom(`
+    <main>
+      <pre class="language-codex-widget">{"type":"html_widget","version":1,"title":"Widget","html":"&lt;button&gt;Inside</pre>
+    </main>
+  `);
+  const state = testState();
+  const source = document.querySelector("pre");
+
+  scanDocument(state);
+
+  assert.equal(document.querySelector("[data-codexmod-component-mount]"), null);
+  assert.equal(source.style.display, "");
+
+  source.textContent = JSON.stringify({
+    type: "html_widget",
+    version: 1,
+    title: "Widget",
+    html: "<button>Inside iframe</button>",
+  });
+  scanDocument(state);
+
+  assert.ok(document.querySelector(".codexmod-widget-frame"));
+});
+
+test("renders codex-widget blocks through the local scroll-safe iframe by default", () => {
+  setupDom(`
+    <main>
+      <pre class="language-codex-widget">{"type":"html_widget","version":1,"title":"Local","height":180,"html":"<button>Inside iframe</button>"}</pre>
+    </main>
+  `);
+  const state = testState();
+
+  scanDocument(state);
+
+  const frame = document.querySelector(".codexmod-widget-frame");
+  assert.ok(frame);
+  assert.equal(state.settings.componentBlocks, false);
+  assert.equal(frame.style.pointerEvents, "none");
+  assert.equal(document.querySelector(".codexmod-widget-guard button").textContent, "Enable interaction");
+});
+
+test("forces legacy component block rendering off even when stale settings enabled it", () => {
+  setupDom();
+  localStorage.setItem("codexmod.components.settings.v1", JSON.stringify({
+    componentBlocks: true,
+    mediaEmbeds: false,
+    linkPreviews: false,
+    promptInjection: true,
+    videoPreviewMigration: 1,
+  }));
+
+  const settings = loadSettings();
+  assert.equal(settings.componentBlocks, false);
+  assert.equal(settings.mediaEmbeds, true);
+  assert.equal(settings.linkPreviews, true);
+  assert.equal(settings.promptInjection, false);
+});
+
+test("README supported section list matches the renderer contract", () => {
+  const readme = readFileSync(join(__dirname, "..", "..", "README.md"), "utf8");
+  for (const section of ALL_DASHBOARD_SECTIONS) {
+    assert.match(readme, new RegExp(`(?:- |\\| )\`${section.type}\``), `${section.type} is missing from README.md`);
+  }
+});
+
+function mountJson(state, descriptor) {
+  const source = document.createElement("pre");
+  document.body.append(source);
+  mountBlock(state, {
+    node: source,
+    language: "codex-component",
+    raw: JSON.stringify(descriptor),
+    hideSource: true,
+  });
+}
+
+function testState() {
+  return createState({
+    log: {
+      info() {},
+      warn() {},
+    },
+    storage: {
+      get() {},
+      set() {},
+    },
+  });
+}
+
+function setupDom(html = "<main></main>") {
+  const dom = new JSDOM(`<!doctype html><html><body>${html}</body></html>`, {
+    url: "https://codex.local/",
+    pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.NodeFilter = dom.window.NodeFilter;
+  global.Node = dom.window.Node;
+  global.InputEvent = dom.window.InputEvent;
+  global.MutationObserver = dom.window.MutationObserver;
+  global.IntersectionObserver = class {
+    observe(node) {
+      node.__codexmodRenderWidget?.();
+    }
+    unobserve() {}
+    disconnect() {}
+  };
+  global.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  global.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  global.localStorage = dom.window.localStorage;
+  window.open = () => {};
+  Object.assign(tweakContext, {
+    window: dom.window,
+    document: dom.window.document,
+    NodeFilter: dom.window.NodeFilter,
+    Node: dom.window.Node,
+    InputEvent: dom.window.InputEvent,
+    MutationObserver: dom.window.MutationObserver,
+    IntersectionObserver: global.IntersectionObserver,
+    ResizeObserver: global.ResizeObserver,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+    localStorage: dom.window.localStorage,
+  });
+}
+
+function disposeAll(state) {
+  while (state.disposers.length) state.disposers.pop()();
+}
+
+function loadTweakForTest(context) {
+  const module = { exports: {} };
+  const filename = join(__dirname, "index.js");
+  const source = readFileSync(filename, "utf8");
+  const script = new vm.Script(source, { filename });
+  Object.assign(context, {
+    module,
+    exports: module.exports,
+    process,
+    console,
+    URL,
+    setTimeout,
+    clearTimeout,
+  });
+  script.runInNewContext(context);
+  return module.exports;
+}

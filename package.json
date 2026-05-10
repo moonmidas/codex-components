@@ -8,10 +8,14 @@
   },
   "scripts": {
     "install:local": "node ./scripts/install.mjs",
-    "check": "node --check ./scripts/install.mjs && node --check ./tweaks/codex-components/index.js"
+    "test": "node --test scripts/install.test.mjs tweaks/codex-components/index.test.cjs",
+    "check": "node --check ./scripts/install.mjs && node --check ./tweaks/codex-components/index.js && npm test"
   },
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
 }

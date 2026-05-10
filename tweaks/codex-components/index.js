@@ -1,4 +1,6 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
+const TWEAK_BUILD = "2026-05-09-youtube-link-preview-v10";
+
 module.exports = {
   start(api) {
     const state = createState(api);
@@ -6,7 +8,7 @@ module.exports = {
     installStyles(state);
     installRenderer(state);
     registerSettings(state);
-    state.api.log.info("Codex Components started");
+    state.api.log.info(`Codex Components started (${TWEAK_BUILD})`);
   },
 
   stop() {
@@ -16,6 +18,28 @@ module.exports = {
     this._state = null;
   },
 };
+
+if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
+  module.exports.__test = {
+    createState,
+    mountBlock,
+    renderDashboard,
+    renderIntake,
+    renderHtmlWidget,
+    renderShowWidget,
+    mountShowWidgetFrame,
+    enhanceNativeTables,
+    enhanceLinksAndMedia,
+    buildWidgetDocument,
+    normalizeDescriptor,
+    uniqueBlocks,
+    scanDocument,
+    installRenderer,
+    hasNearbyNativeRender,
+    shouldDeferToNativeRenderer,
+    loadSettings,
+  };
+}
 
 function createState(api) {
   return {
@@ -28,7 +52,6 @@ function createState(api) {
     observer: null,
     scanQueued: false,
     disposed: false,
-    widgetObserver: null,
     pageHandle: null,
     sectionHandle: null,
     pageRoot: null,
@@ -39,24 +62,30 @@ const SETTINGS_KEY = "codexmod.components.settings.v1";
 
 const DEFAULT_SETTINGS = Object.freeze({
   renderer: true,
+  componentBlocks: false,
   dashboards: true,
   intake: true,
   htmlWidgets: true,
   mediaEmbeds: true,
   linkPreviews: true,
-  tablePolish: true,
+  tablePolish: false,
   autoPromptHelper: true,
-  promptInjection: true,
-  videoPreviewMigration: 1,
+  promptInjection: false,
+  videoPreviewMigration: 2,
 });
 
 function loadSettings() {
   try {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     const settings = { ...DEFAULT_SETTINGS, ...stored };
-    if (stored.videoPreviewMigration !== 1) {
+    settings.componentBlocks = false;
+    settings.tablePolish = false;
+    settings.promptInjection = false;
+    if (stored.videoPreviewMigration !== 2) {
       settings.mediaEmbeds = true;
-      settings.videoPreviewMigration = 1;
+      settings.linkPreviews = true;
+      settings.promptInjection = false;
+      settings.videoPreviewMigration = 2;
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     }
     return settings;
@@ -70,7 +99,9 @@ function saveSettings(state) {
 }
 
 function setSetting(state, key, value) {
+  if (key === "promptInjection") value = false;
   state.settings[key] = Boolean(value);
+  if (key !== "componentBlocks") state.settings.componentBlocks = false;
   saveSettings(state);
   rerenderAll(state);
   if (state.pageRoot) renderSettingsPage(state.pageRoot, state);
@@ -102,12 +133,14 @@ function disposeState(state) {
 }
 
 function installRenderer(state) {
+  cleanupRenderedComponents();
+  cleanupVideoCards();
+  cleanupPromptContractLeak();
   scheduleScan(state);
   const observer = new MutationObserver(() => scheduleScan(state));
   observer.observe(document.documentElement, { childList: true, subtree: true });
   state.observer = observer;
   state.disposers.push(() => observer.disconnect());
-  installWidgetObserver(state);
   state.disposers.push(() => {
     document.querySelectorAll("[data-codexmod-component-mount]").forEach((node) => node.remove());
     document.querySelectorAll("[data-codexmod-component-source='true']").forEach((node) => {
@@ -118,9 +151,33 @@ function installRenderer(state) {
   installPromptInjection(state);
 }
 
+function cleanupRenderedComponents() {
+  document.querySelectorAll("[data-codexmod-component-mount]").forEach((node) => node.remove());
+  document.querySelectorAll("[data-codexmod-component-source='true']").forEach((node) => {
+    node.style.display = "";
+    node.removeAttribute("data-codexmod-component-source");
+  });
+}
+
+function cleanupPromptContractLeak() {
+  document.querySelectorAll("textarea, [contenteditable='true']").forEach((composer) => {
+    if (!isComposerSurface(composer)) return;
+    const text = readComposer(composer);
+    if (!text.includes("Codex Components prompt contract")) return;
+    writeComposer(composer, stripPromptContractFromText(text));
+  });
+}
+
 function scanDocument(state) {
   state.scanQueued = false;
   if (!state.settings.renderer) return;
+  if (state.settings.componentBlocks) discoverAndMountBlocks(state, () => true);
+  else discoverAndMountBlocks(state, isLocallyOwnedBlock);
+  enhanceNativeTables(state);
+  enhanceLinksAndMedia(state);
+}
+
+function discoverAndMountBlocks(state, allowBlock) {
   const blocks = [];
   const candidates = recentNodes(document.querySelectorAll("pre, code, [data-language], [class*='language-']"), 160);
   candidates.forEach((node) => {
@@ -129,22 +186,44 @@ function scanDocument(state) {
     if (text.length > 120000) return;
     const language = detectLanguage(node);
     if (isComponentLanguage(language)) {
-      blocks.push({ node, language, raw: cleanRaw(text, language), hideSource: true });
+      pushAllowedBlock(blocks, allowBlock, { node, language, raw: cleanRaw(text, language), hideSource: true });
       return;
     }
     if (isCandidateJsonLanguage(language)) {
       const raw = cleanRaw(text, language);
       if (looksLikeComponentJson(raw)) {
-        blocks.push({ node, language: "codex-component", raw, hideSource: true });
+        pushAllowedBlock(blocks, allowBlock, { node, language: "codex-component", raw, hideSource: true });
         return;
       }
     }
-    blocks.push(...blocksFromText(state, node, text, true));
+    for (const block of blocksFromText(state, node, text, true)) {
+      pushAllowedBlock(blocks, allowBlock, block);
+    }
   });
-  collectTextFenceBlocks(state, blocks);
-  blocks.slice(0, 24).forEach((block) => mountBlock(state, block));
-  enhanceNativeTables(state);
-  enhanceLinksAndMedia(state);
+  collectTextFenceBlocks(state, blocks, allowBlock);
+  uniqueBlocks(blocks).slice(0, 24).forEach((block) => mountBlock(state, block));
+}
+
+function pushAllowedBlock(blocks, allowBlock, block) {
+  if (allowBlock(block)) blocks.push(block);
+}
+
+function isLocallyOwnedBlock(block) {
+  const language = String(block.language || "").trim();
+  if (language === "codex-widget" || language === "show_widget" || language === "show-widget") return true;
+  const result = normalizeDescriptor(block.raw, language);
+  if (!result.ok) return isIncompleteComponentJson(block.raw, result.error);
+  return ["dashboard", "intake", "html_widget", "show_widget"].includes(result.descriptor.type);
+}
+
+function uniqueBlocks(blocks) {
+  const seen = new Set();
+  return blocks.filter((block) => {
+    const key = `${block.language || ""}\n${String(block.raw || "").trim()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function scheduleScan(state) {
@@ -169,10 +248,25 @@ function recentNodes(nodeList, limit) {
 function shouldSkipNode(state, node) {
   return state.mounted.has(node)
     || node.closest?.("[data-codexmod-component-mount], .codex-components, .codexmod-settings")
+    || isComposerSurface(node)
     || node.dataset?.codexmodComponentSource === "true";
 }
 
-function collectTextFenceBlocks(state, blocks) {
+function isComposerSurface(node) {
+  return Boolean(node?.closest?.([
+    "textarea",
+    "[contenteditable='true']",
+    "form",
+    "footer",
+    "[role='textbox']",
+    "[data-testid*='composer' i]",
+    "[class*='composer' i]",
+    "[aria-label*='message' i]",
+    "[aria-label*='prompt' i]",
+  ].join(",")));
+}
+
+function collectTextFenceBlocks(state, blocks, allowBlock = () => true) {
   const root = document.querySelector("main") || document.body;
   if (!root || (root.textContent || "").length > 350000) return;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -184,8 +278,10 @@ function collectTextFenceBlocks(state, blocks) {
     const text = textNode.textContent || "";
     if (text.includes("```codex-component") || text.includes("```codex-widget") || text.includes("```show_widget")) {
       const source = nearestRenderableSource(textNode);
-      if (source && !seen.has(source) && !shouldSkipNode(state, source)) {
-        blocks.push(...blocksFromText(state, source, source.textContent || text, shouldHideSource(source)));
+      if (source && !isComposerSurface(source) && !seen.has(source) && !shouldSkipNode(state, source)) {
+        for (const block of blocksFromText(state, source, source.textContent || text, shouldHideSource(source))) {
+          pushAllowedBlock(blocks, allowBlock, block);
+        }
         seen.add(source);
       }
     }
@@ -296,8 +392,29 @@ function normalizeDescriptor(raw, language) {
 }
 
 function mountBlock(state, block) {
-  state.mounted.add(block.node);
   const sourceNode = block.hideSource ? findCodeBlockShell(block.node, block.raw, block.language) : block.node;
+  if (state.mounted.has(block.node) || state.mounted.has(sourceNode)) return;
+  const result = normalizeDescriptor(block.raw, block.language);
+  if (!result.ok && isIncompleteComponentJson(block.raw, result.error)) return;
+  if (!result.ok) {
+    state.mounted.add(block.node);
+    state.mounted.add(sourceNode);
+    sourceNode.dataset.codexmodComponentSource = "true";
+    if (block.hideSource) sourceNode.style.display = "none";
+    const mount = document.createElement("div");
+    mount.className = "codex-components";
+    mount.dataset.codexmodComponentMount = "true";
+    sourceNode.after(mount);
+    renderError(mount, result.error, block.raw);
+    return;
+  }
+  const descriptor = result.descriptor;
+  if (hasNearbyNativeRender(sourceNode, descriptor.type)) {
+    state.mounted.add(block.node);
+    state.mounted.add(sourceNode);
+    return;
+  }
+  state.mounted.add(block.node);
   state.mounted.add(sourceNode);
   sourceNode.dataset.codexmodComponentSource = "true";
   if (block.hideSource) sourceNode.style.display = "none";
@@ -306,12 +423,11 @@ function mountBlock(state, block) {
   mount.dataset.codexmodComponentMount = "true";
   sourceNode.after(mount);
 
-  const result = normalizeDescriptor(block.raw, block.language);
-  if (!result.ok) {
-    renderError(mount, result.error, block.raw);
+  if (shouldDeferToNativeRenderer(descriptor)) {
+    sourceNode.style.display = "";
+    mount.remove();
     return;
   }
-  const descriptor = result.descriptor;
   try {
     if (descriptor.type === "dashboard" && state.settings.dashboards) renderDashboard(mount, descriptor, block.raw, state);
     else if (descriptor.type === "intake" && state.settings.intake) renderIntake(mount, descriptor, block.raw, state);
@@ -327,11 +443,106 @@ function mountBlock(state, block) {
   }
 }
 
+function shouldDeferToNativeRenderer(descriptor) {
+  return false;
+}
+
+function isIncompleteComponentJson(raw, error) {
+  const text = String(raw || "").trim();
+  if (!text) return true;
+  if (/Unexpected end of JSON input|Unterminated string/i.test(String(error || ""))) return true;
+  const opens = (text.match(/[\[{]/g) || []).length;
+  const closes = (text.match(/[\]}]/g) || []).length;
+  return opens > closes;
+}
+
+function hasNearbyNativeRender(sourceNode, expectedType = "") {
+  const normalizedType = normalizeComponentType(expectedType);
+  const ownMount = (node) => node?.matches?.("[data-codexmod-component-mount], .codex-components");
+  const nativeSurface = (node, requireType = false) => {
+    if (!node || ownMount(node)) return false;
+    if (node === sourceNode || node.contains?.(sourceNode) || sourceNode.contains?.(node)) return false;
+    if (node.matches?.("pre, code, script, style")) return false;
+    const text = (node.textContent || "").trim();
+    if (!text || text.startsWith("```")) return false;
+    const className = String(node.className || "").toLowerCase();
+    const role = String(node.getAttribute?.("role") || "").toLowerCase();
+    const data = Object.entries(node.dataset || {}).map(([key, value]) => `${key}:${value}`).join(" ").toLowerCase();
+    if (requireType && normalizedType && !surfaceMatchesComponentType(node, normalizedType, `${className} ${data}`)) return false;
+    const looksComponentish =
+      /component|widget|artifact|intake|dashboard/.test(className)
+      || /component|widget|artifact|intake|dashboard/.test(data)
+      || ["region", "group"].includes(role);
+    const looksLikeCard =
+      node.querySelector?.("button, iframe, table, h1, h2, h3, h4, strong")
+      && node.getBoundingClientRect?.().height !== 0;
+    return Boolean(looksComponentish || looksLikeCard);
+  };
+
+  const candidates = [
+    sourceNode.previousElementSibling,
+    sourceNode.nextElementSibling,
+    sourceNode.parentElement?.previousElementSibling,
+    sourceNode.parentElement?.nextElementSibling,
+  ];
+  if (candidates.some((node) => nativeSurface(node, true))) return true;
+
+  const message = sourceNode.closest?.("[data-message-author-role], article, [role='article']");
+  if (!message) return false;
+  return Array.from(message.querySelectorAll("section, div, article, [role='group'], [role='region']"))
+    .some((node) => nativeSurface(node, true));
+}
+
+function normalizeComponentType(type) {
+  const normalized = String(type || "").toLowerCase().replace(/-/g, "_");
+  if (normalized === "html_widget") return "widget";
+  if (normalized === "show_widget") return "widget";
+  return normalized;
+}
+
+function surfaceMatchesComponentType(node, normalizedType, searchableText) {
+  if (normalizedType === "widget") return /widget|html_widget|show_widget/.test(searchableText) || Boolean(node.querySelector?.("iframe"));
+  return new RegExp(`(^|[^a-z])${escapeRegExp(normalizedType)}([^a-z]|$)`).test(searchableText);
+}
+
 function findCodeBlockShell(node, raw, language) {
   let current = node;
   let shell = node;
   const rawStart = String(raw || "").trim().slice(0, 40);
-  const languagePattern = new RegExp(`^(${[
+  for (let i = 0; i < 8 && current?.parentElement; i += 1) {
+    const parent = current.parentElement;
+    const text = parent.textContent || "";
+    const parentHasOwnLanguage = isComponentLanguage(detectLanguage(parent));
+    const parentIsCodeElement = parent.matches?.("pre, code");
+    const hasOwnChrome = hasOwnCodeBlockChrome(parent, rawStart, language);
+    const structuralWrapper = hasOnlyTargetCodeBlock(parent, node);
+    const looksLikeCodeShell =
+      text.includes(rawStart)
+      && (parentIsCodeElement || parentHasOwnLanguage || hasOwnChrome || structuralWrapper);
+    const tooBroad =
+      parent.matches?.("article, [data-message-author-role], main, body")
+      || parent.querySelectorAll?.("pre").length > 1
+      || parent.querySelectorAll?.("[data-codexmod-component-mount]").length > 0
+      || (parent.parentElement?.matches?.("article, [data-message-author-role], [role='article']") && !hasOwnChrome && !parentHasOwnLanguage && !parentIsCodeElement);
+    if (looksLikeCodeShell && !tooBroad) {
+      shell = parent;
+      current = parent;
+      if (hasOwnChrome && !parentIsCodeElement) break;
+    }
+    else break;
+  }
+  return shell;
+}
+
+function hasOnlyTargetCodeBlock(parent, node) {
+  const pres = Array.from(parent.querySelectorAll?.("pre") || []);
+  if (pres.length) return pres.length === 1 && pres[0].contains(node);
+  const codes = Array.from(parent.querySelectorAll?.("code") || []);
+  return codes.length === 1 && codes[0].contains(node);
+}
+
+function hasOwnCodeBlockChrome(parent, rawStart, language) {
+  const labels = [
     language,
     "json",
     "codex",
@@ -339,28 +550,15 @@ function findCodeBlockShell(node, raw, language) {
     "codex-widget",
     "show_widget",
     "show-widget",
-  ].filter(Boolean).map(escapeRegExp).join("|")})\\s*[\\r\\n{]`, "i");
-  for (let i = 0; i < 8 && current?.parentElement; i += 1) {
-    const parent = current.parentElement;
-    const text = parent.textContent || "";
-    const trimmed = text.trim();
-    const looksLikeCodeShell =
-      text.includes(rawStart)
-      && (parent.querySelector?.("button, svg, [aria-label*='opy'], [title*='opy']")
-        || languagePattern.test(trimmed)
-        || parent.matches?.("pre, code")
-        || parent.querySelector?.("pre, code"));
-    const tooBroad =
-      parent.matches?.("article, [data-message-author-role], main, body")
-      || parent.querySelectorAll?.("pre").length > 1
-      || parent.querySelectorAll?.("[data-codexmod-component-mount]").length > 0;
-    if (looksLikeCodeShell && !tooBroad) {
-      shell = parent;
-      current = parent;
-    }
-    else break;
-  }
-  return shell;
+  ].filter(Boolean).map((label) => String(label).toLowerCase());
+  return Array.from(parent.children || []).some((child) => {
+    const text = (child.textContent || "").trim();
+    if (!text || text.includes(rawStart)) return false;
+    if (child.matches?.("button, [aria-label*='opy' i], [title*='opy' i]")) return true;
+    if (child.querySelector?.("button, [aria-label*='opy' i], [title*='opy' i]")) return true;
+    const normalized = text.toLowerCase();
+    return text.length <= 80 && labels.some((label) => normalized === label || normalized.includes(label));
+  });
 }
 
 function escapeRegExp(text) {
@@ -385,11 +583,10 @@ function renderShell(target, descriptor, raw, state, className) {
 
 function toolbar(descriptor, raw, state) {
   const bar = el("div", { className: "codexmod-component-toolbar" });
-  bar.append(
-    button("Copy data", () => copyText(JSON.stringify(descriptor, null, 2), state)),
-    button("Copy source", () => copyText(raw, state)),
-    button("View source", () => showSource(raw)),
-  );
+  const copy = button("Copy", () => copyText(raw || JSON.stringify(descriptor, null, 2), state));
+  copy.setAttribute("aria-label", "Copy component JSON");
+  copy.setAttribute("title", "Copy component JSON");
+  bar.append(copy);
   return bar;
 }
 
@@ -675,12 +872,18 @@ function initials(text) {
 
 function renderIntake(target, descriptor, raw, state) {
   const body = renderShell(target, descriptor, raw, state, "codexmod-intake");
-  const prompt = descriptor.question || descriptor.title || "Choose an option";
-  body.append(el("h2", { className: "codexmod-intake-question" }, [prompt]));
+  const question = String(descriptor.question || "").trim();
+  const title = String(descriptor.title || "").trim();
+  if (question && question !== title) {
+    body.append(el("h2", { className: "codexmod-intake-question" }, [question]));
+  }
   body.append(el("div", { className: "codexmod-intake-options" }, (descriptor.options || []).map((option, index) =>
     el("button", { type: "button", className: "codexmod-intake-option", onclick: () => insertPrompt(option.prompt || option.label || "") }, [
       el("span", {}, [String(index + 1)]),
-      el("strong", {}, [option.label || option.title || `Option ${index + 1}`]),
+      el("div", { className: "codexmod-intake-option-copy" }, [
+        el("strong", {}, [option.label || option.title || `Option ${index + 1}`]),
+        option.description ? el("small", {}, [option.description]) : null,
+      ]),
     ]),
   )));
 }
@@ -688,16 +891,20 @@ function renderIntake(target, descriptor, raw, state) {
 function renderHtmlWidget(target, descriptor, raw, state) {
   const body = renderShell(target, descriptor, raw, state, "codexmod-widget");
   const frame = document.createElement("iframe");
+  const bounds = widgetFrameBounds(descriptor, 360);
   frame.className = "codexmod-widget-frame";
   frame.setAttribute("sandbox", "allow-scripts");
+  frame.setAttribute("scrolling", "yes");
   frame.srcdoc = descriptor.html || descriptor.content || "";
-  frame.style.height = `${Number(descriptor.height) || 360}px`;
-  body.append(frame);
+  mountWidgetScrollbox(body, frame, bounds, state);
+  attachFrameInteractionGuard(body, frame);
   const onMessage = (event) => {
     if (event.source !== frame.contentWindow) return;
     const data = event.data || {};
     if (data.method === "ui/notifications/size-changed" && data.params?.height) {
-      frame.style.height = `${Math.max(80, Math.ceil(Number(data.params.height)))}px`;
+      applyWidgetFrameHeight(frame, bounds, data.params.height);
+    } else if (data.method === "codex/scroll-parent" && data.params?.deltaY) {
+      scrollNearestContainer(frame, Number(data.params.deltaY) || 0);
     }
   };
   window.addEventListener("message", onMessage);
@@ -706,60 +913,156 @@ function renderHtmlWidget(target, descriptor, raw, state) {
 
 function renderShowWidget(target, descriptor, raw, state) {
   target.innerHTML = "";
-  const body = el("section", { className: "codexmod-show-widget-body" }, [
-    el("div", { className: "codexmod-widget-loading" }, loadingMessages(descriptor).map((message) => el("span", {}, [message]))),
-  ]);
+  const body = el("section", { className: "codexmod-show-widget-body" });
   target.append(body);
-  observeLazyWidget(state, body, () => mountShowWidgetFrame(body, descriptor, state));
-}
-
-function loadingMessages(descriptor) {
-  const messages = Array.isArray(descriptor.loading_messages) ? descriptor.loading_messages : [];
-  return messages.slice(0, 4).filter(Boolean).length ? messages.slice(0, 4).filter(Boolean) : ["Rendering widget..."];
-}
-
-function humanizeTitle(title) {
-  return String(title || "Widget").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function observeLazyWidget(state, node, render) {
-  if (!state.widgetObserver) {
-    state.widgetObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const renderWidget = entry.target.__codexmodRenderWidget;
-        delete entry.target.__codexmodRenderWidget;
-        state.widgetObserver.unobserve(entry.target);
-        renderWidget?.();
-      }
-    }, { rootMargin: "320px 0px" });
-    state.disposers.push(() => state.widgetObserver?.disconnect());
-  }
-  node.__codexmodRenderWidget = render;
-  state.widgetObserver.observe(node);
+  mountShowWidgetFrame(body, descriptor, state);
 }
 
 function mountShowWidgetFrame(body, descriptor, state) {
   body.innerHTML = "";
   const frame = document.createElement("iframe");
+  const bounds = widgetFrameBounds(descriptor, 520);
   frame.className = "codexmod-widget-frame codexmod-show-widget-frame";
   frame.setAttribute("sandbox", "allow-scripts");
+  frame.setAttribute("scrolling", "yes");
   frame.srcdoc = buildWidgetDocument(descriptor.widget_code || descriptor.html || descriptor.content || "");
-  frame.style.height = `${Number(descriptor.height) || 120}px`;
-  body.append(frame);
+  mountWidgetScrollbox(body, frame, bounds, state);
+  attachFrameInteractionGuard(body, frame);
   const onMessage = (event) => {
     if (event.source !== frame.contentWindow) return;
     const data = event.data || {};
     if (data.method === "ui/notifications/size-changed" && data.params?.height) {
-      frame.style.height = `${Math.max(80, Math.ceil(Number(data.params.height)))}px`;
+      applyWidgetFrameHeight(frame, bounds, data.params.height);
     } else if (data.method === "codex/send-prompt" && data.params?.text) {
       insertPrompt(String(data.params.text));
     } else if (data.method === "codex/open-link" && data.params?.url) {
       window.open(String(data.params.url), "_blank", "noopener,noreferrer");
+    } else if (data.method === "codex/scroll-parent" && data.params?.deltaY) {
+      scrollNearestContainer(frame, Number(data.params.deltaY) || 0);
     }
   };
   window.addEventListener("message", onMessage);
   state.disposers.push(() => window.removeEventListener("message", onMessage));
+}
+
+function mountWidgetScrollbox(body, frame, bounds, state) {
+  const scrollbox = el("div", { className: "codexmod-widget-scrollbox" });
+  scrollbox.style.height = `${bounds.initial}px`;
+  scrollbox.style.overflowY = "auto";
+  scrollbox.style.overflowX = "hidden";
+  scrollbox.style.overscrollBehavior = "contain";
+  frame.style.height = `${bounds.initial}px`;
+  scrollbox.append(frame);
+  body.append(scrollbox);
+  installWidgetScrollAssist(scrollbox, frame, state);
+  return scrollbox;
+}
+
+function installWidgetScrollAssist(scrollbox, frame, state) {
+  const onWheel = (event) => {
+    if (frame.dataset.codexmodInteraction === "on") return;
+    scrollWidgetFrame(scrollbox, event);
+  };
+  const onDocumentWheel = (event) => {
+    if (frame.dataset.codexmodInteraction === "on") return;
+    if (!isPointerInside(event, scrollbox)) return;
+    scrollWidgetFrame(scrollbox, event);
+  };
+  scrollbox.addEventListener("wheel", onWheel, { passive: false });
+  document.addEventListener("wheel", onDocumentWheel, { passive: false, capture: true });
+  state?.disposers?.push?.(() => {
+    scrollbox.removeEventListener("wheel", onWheel);
+    document.removeEventListener("wheel", onDocumentWheel, { capture: true });
+  });
+}
+
+function scrollWidgetFrame(scrollbox, event) {
+  if (!scrollElementBy(scrollbox, Number(event.deltaY) || 0)) return false;
+  event.preventDefault?.();
+  event.stopPropagation?.();
+  return true;
+}
+
+function isPointerInside(event, node) {
+  const rect = node.getBoundingClientRect?.();
+  if (!rect) return false;
+  const x = Number(event.clientX);
+  const y = Number(event.clientY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function widgetFrameBounds(descriptor, fallbackHeight) {
+  const requested = positiveNumber(descriptor.height) || fallbackHeight;
+  const explicitMax = positiveNumber(descriptor.max_height);
+  const max = explicitMax || Math.min(Math.max(requested, 360), 720);
+  const min = Math.min(requested, max);
+  return { initial: min, min, max };
+}
+
+function positiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function applyWidgetFrameHeight(frame, bounds, measuredHeight) {
+  const measured = positiveNumber(measuredHeight);
+  const contentHeight = Math.max(bounds.min, measured || bounds.min);
+  const viewportHeight = Math.min(bounds.max, contentHeight);
+  const scrollbox = frame.closest?.(".codexmod-widget-scrollbox");
+  frame.style.height = `${contentHeight}px`;
+  if (scrollbox) {
+    scrollbox.style.height = `${viewportHeight}px`;
+    scrollbox.classList.toggle("codexmod-widget-scrollbox-scrollable", contentHeight > bounds.max);
+  } else {
+    frame.style.height = `${viewportHeight}px`;
+    frame.classList.toggle("codexmod-widget-frame-scrollable", contentHeight > bounds.max);
+  }
+}
+
+function scrollNearestContainer(node, deltaY) {
+  if (!deltaY) return;
+  for (let current = node?.parentElement; current; current = current.parentElement) {
+    if (isScrollableContainer(current) && scrollElementBy(current, deltaY)) return;
+  }
+  const scroller = document.scrollingElement || document.documentElement;
+  if (!scrollElementBy(scroller, deltaY)) scroller.scrollTop += deltaY;
+}
+
+function isScrollableContainer(node) {
+  if (!node) return false;
+  if (node.classList?.contains("codexmod-widget-scrollbox")) return node.scrollHeight > node.clientHeight;
+  const style = getComputedStyle(node);
+  return /(auto|scroll|overlay)/.test(style.overflowY || "") && node.scrollHeight > node.clientHeight;
+}
+
+function scrollElementBy(node, deltaY) {
+  if (!node || !deltaY) return false;
+  const maxScroll = Math.max(0, node.scrollHeight - node.clientHeight);
+  if (maxScroll <= 1) return false;
+  const current = node.scrollTop || 0;
+  const next = Math.min(maxScroll, Math.max(0, current + deltaY));
+  if (next === current) return false;
+  node.scrollTop = next;
+  return true;
+}
+
+function attachFrameInteractionGuard(container, frame, label = "Scroll-safe mode") {
+  if (!container || frame.dataset.codexmodInteraction) return;
+  frame.dataset.codexmodInteraction = "off";
+  frame.style.pointerEvents = "none";
+  const toggle = button("Enable interaction", () => {
+    const active = frame.dataset.codexmodInteraction === "on";
+    frame.dataset.codexmodInteraction = active ? "off" : "on";
+    frame.style.pointerEvents = active ? "none" : "auto";
+    toggle.textContent = active ? "Enable interaction" : "Disable interaction";
+  });
+  const guard = el("div", { className: "codexmod-widget-guard" }, [
+    el("span", {}, [label]),
+    toggle,
+  ]);
+  const anchor = frame.closest?.(".codexmod-widget-scrollbox") || frame;
+  container.insertBefore(guard, anchor);
 }
 
 function buildWidgetDocument(widgetCode) {
@@ -784,9 +1087,25 @@ a{color:inherit}
     document.body.getBoundingClientRect().height || 0
   );
   const notifySize = () => parent.postMessage({ method: "ui/notifications/size-changed", params: { height: Math.ceil(contentHeight()) } }, "*");
-  new ResizeObserver(notifySize).observe(document.body);
+  window.addEventListener("wheel", (event) => {
+    const deltaY = Number(event.deltaY) || 0;
+    if (!deltaY) return;
+    event.preventDefault();
+    parent.postMessage({ method: "codex/scroll-parent", params: { deltaY } }, "*");
+  }, { passive: false });
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(notifySize).observe(document.body);
+  } else {
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+      notifySize();
+      if (ticks >= 12) clearInterval(timer);
+    }, 250);
+  }
   window.addEventListener("load", notifySize);
-  requestAnimationFrame(notifySize);
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(notifySize);
+  else setTimeout(notifySize, 0);
   ${svgMode ? "document.body.style.display='inline-block';" : ""}
 })();
 </script></body></html>`;
@@ -890,12 +1209,18 @@ function enhanceNativeTables(state) {
 
 function enhanceLinksAndMedia(state) {
   if (!state.settings.mediaEmbeds && !state.settings.linkPreviews) return;
+  cleanupVideoCards();
   document.querySelectorAll("a[href]").forEach((link) => {
-    if (state.enhancedLinks.has(link) || link.closest?.(".codex-components, .codexmod-settings, table")) return;
+    if (
+      state.enhancedLinks.has(link)
+      || link.dataset?.codexmodLinkEnhanced === "true"
+      || link.closest?.(".codex-components, .codexmod-settings, .codexmod-link-card, table")
+      || isComposerSurface(link)
+    ) return;
     const href = link.href;
     const youtube = parseYouTubeUrl(href);
     if (youtube && state.settings.mediaEmbeds) {
-      insertAfterLink(link, renderYouTubeEmbed(youtube, href));
+      insertAfterLink(link, renderYouTubeEmbed(youtube, href, link.textContent || href), { hideStandaloneLink: true });
       state.enhancedLinks.add(link);
       return;
     }
@@ -990,19 +1315,76 @@ function componentPromptComment() {
   return `<!-- Codex Components prompt contract:
 When this answer uses tools, plugins, skills, analytics, links, tables, or structured data, prefer concise visual components over prose-only output.
 For dashboards, emit a fenced JSON block with language codex-component and type "dashboard".
-For custom HTML/SVG visuals or interactive mini-tools, emit language show_widget with title, widget_code, and loading_messages.
-Use sections: metric_strip, insight_grid, funnel, bar_chart, table, recommendations, action_chips.
+Use dashboard sections before custom HTML: metric_strip, insight_grid, funnel, bar_chart, progress_bars, timeline, table, recommendations, action_chips.
+Use show_widget only for compact diagrams, charts, mockups, art, or interactive mini-tools that cannot be expressed as dashboard sections.
+Do not use show_widget for long lists, repeated rows, tables, record grids, or nested card layouts; use dashboard table, timeline, record_cards, or insight_grid instead.
+If show_widget is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.
 Keep labels short, include one-line interpretation, and use semantic signal colors only.
-Leave YouTube/video URLs and normal URLs as plain links outside tables so Codex Components can render embeds/link cards.
+Leave YouTube/video URLs and normal URLs as plain links outside tables so Codex Components can render video previews/link cards.
 Do not place link preview cards inside tables.
 -->`;
 }
 
-function insertAfterLink(link, node) {
+function insertAfterLink(link, node, options = {}) {
   const paragraph = link.closest("p, li, div") || link;
-  if (paragraph.nextElementSibling?.dataset?.codexmodLinkPreview === "true") return;
+  if (paragraph.nextElementSibling?.dataset?.codexmodLinkPreview === "true") {
+    if (options.hideStandaloneLink) hideStandaloneLinkBlock(link, paragraph);
+    return;
+  }
+  link.dataset.codexmodLinkEnhanced = "true";
   node.dataset.codexmodLinkPreview = "true";
   paragraph.after(node);
+  if (options.hideStandaloneLink) hideStandaloneLinkBlock(link, paragraph);
+}
+
+function cleanupVideoCards() {
+  document.querySelectorAll(".codexmod-video-card").forEach((card) => {
+    const link = findAssociatedYouTubeLink(card);
+    if (link) hideStandaloneLinkBlock(link);
+    if (isCurrentVideoCard(card)) return;
+    if (!link) return;
+    const videoId = parseYouTubeUrl(link.href);
+    if (!videoId) return;
+    const replacement = renderYouTubeEmbed(videoId, link.href, link.textContent || link.href);
+    replacement.dataset.codexmodLinkPreview = "true";
+    link.dataset.codexmodLinkEnhanced = "true";
+    card.replaceWith(replacement);
+    hideStandaloneLinkBlock(link);
+  });
+}
+
+function isCurrentVideoCard(card) {
+  const hasCurrentSurface = card.querySelector?.(".codexmod-video-surface.codexmod-video-thumb");
+  const hasLegacyChrome =
+    card.querySelector?.(".codexmod-video-actions, .codexmod-video-framebar, .codexmod-video-meta")
+    || /\b(Hide video|Open on YouTube)\b/i.test(card.textContent || "");
+  return Boolean(hasCurrentSurface && !hasLegacyChrome);
+}
+
+function findAssociatedYouTubeLink(card) {
+  const candidates = [];
+  for (let node = card.previousElementSibling, hops = 0; node && hops < 4; node = node.previousElementSibling, hops += 1) {
+    candidates.push(...Array.from(node.querySelectorAll?.("a[href]") || []));
+    if (node.matches?.("a[href]")) candidates.push(node);
+  }
+  candidates.push(...Array.from(card.querySelectorAll?.("a[href]") || []));
+  return candidates.find((link) => parseYouTubeUrl(link.href));
+}
+
+function hideStandaloneLinkBlock(link, block = link.closest("p, li, div")) {
+  if (!isStandaloneLinkBlock(link, block)) return false;
+  block.dataset.codexmodLinkSource = "youtube";
+  block.style.display = "none";
+  return true;
+}
+
+function isStandaloneLinkBlock(link, block) {
+  if (!block || block === link) return false;
+  const links = Array.from(block.querySelectorAll?.("a[href]") || []);
+  if (links.length !== 1 || links[0] !== link) return false;
+  const clone = block.cloneNode(true);
+  clone.querySelector?.("a[href]")?.remove();
+  return !(clone.textContent || "").trim();
 }
 
 function parseYouTubeUrl(href) {
@@ -1011,7 +1393,7 @@ function parseYouTubeUrl(href) {
     if (url.hostname === "youtu.be") return url.pathname.slice(1);
     if (url.hostname.endsWith("youtube.com")) {
       if (url.pathname === "/watch") return url.searchParams.get("v");
-      if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/")) return url.pathname.split("/")[2];
+      if (url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/embed/") || url.pathname.startsWith("/live/")) return url.pathname.split("/")[2];
     }
   } catch {
     return null;
@@ -1028,18 +1410,27 @@ function isPreviewableHttpUrl(href) {
   }
 }
 
-function renderYouTubeEmbed(videoId, href) {
+function renderYouTubeEmbed(videoId, href, label) {
   const safeId = encodeURIComponent(videoId);
+  const url = new URL(href);
+  const title = cleanLinkLabel(label, url);
+  const host = url.hostname.replace(/^www\./, "");
   const card = el("section", { className: "codexmod-link-card codexmod-video-card" });
-  renderYouTubePreview(card, safeId, href);
+  renderYouTubePreview(card, safeId, href, title, host);
   return card;
 }
 
-function renderYouTubePreview(card, safeId, href) {
-  card.classList.remove("codexmod-video-card-loaded");
+function renderYouTubePreview(card, safeId, href, title, host) {
+  card.className = "codexmod-link-card codexmod-video-card codexmod-video-card-preview";
   card.innerHTML = "";
   card.append(
-    el("button", { type: "button", className: "codexmod-video-thumb", onclick: () => loadYouTubeFrame(card, safeId, href) }, [
+    el("a", {
+      className: "codexmod-video-surface codexmod-video-thumb",
+      href,
+      target: "_blank",
+      rel: "noreferrer",
+      "aria-label": `Open YouTube video: ${title}`,
+    }, [
       el("img", {
         src: `https://i.ytimg.com/vi/${safeId}/hqdefault.jpg`,
         alt: "YouTube video thumbnail",
@@ -1047,33 +1438,10 @@ function renderYouTubePreview(card, safeId, href) {
       }),
       el("span", { className: "codexmod-video-play", "aria-hidden": "true" }, ["▶"]),
     ]),
-    el("div", { className: "codexmod-video-meta" }, [
-      el("strong", {}, ["YouTube video"]),
-      el("span", {}, [new URL(href).hostname.replace(/^www\./, "")]),
+    el("div", { className: "codexmod-video-overlay" }, [
+      el("a", { className: "codexmod-video-title", href, target: "_blank", rel: "noreferrer" }, [title]),
+      el("span", { className: "codexmod-video-domain" }, [host]),
     ]),
-    el("div", { className: "codexmod-video-actions" }, [
-      button("Play", () => loadYouTubeFrame(card, safeId, href)),
-      el("a", { href, target: "_blank", rel: "noreferrer" }, ["Open"]),
-    ]),
-  );
-}
-
-function loadYouTubeFrame(card, safeId, href) {
-  card.classList.add("codexmod-video-card-loaded");
-  card.innerHTML = "";
-  card.append(
-    el("div", { className: "codexmod-video-framebar" }, [
-      button("Hide video", () => renderYouTubePreview(card, safeId, href)),
-      el("a", { href, target: "_blank", rel: "noreferrer" }, ["Open on YouTube"]),
-    ]),
-    el("iframe", {
-      src: `https://www.youtube-nocookie.com/embed/${safeId}?autoplay=1`,
-      title: "YouTube video",
-      loading: "lazy",
-      referrerpolicy: "strict-origin-when-cross-origin",
-      allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
-      allowfullscreen: "true",
-    }),
   );
 }
 
@@ -1198,16 +1566,16 @@ function renderSettingsPage(root, state) {
     ]),
     settingsGroup("Rendering", [
       toggleRow(state, "renderer", "Enable renderer", "Render component blocks in chat."),
-      toggleRow(state, "dashboards", "Dashboards", "Cards, metrics, funnels, bars, recommendations, and action chips."),
-      toggleRow(state, "intake", "Guided intake cards", "Claude Cowork-style questions with selectable answers."),
-      toggleRow(state, "htmlWidgets", "Sandboxed HTML widgets", "Render trusted widget HTML in an isolated iframe."),
+      toggleRow(state, "componentBlocks", "Legacy block renderer", "Only enable this if native Codex component rendering is unavailable."),
+      toggleRow(state, "dashboards", "Dashboards", "Legacy dashboard renderer when block rendering is enabled."),
+      toggleRow(state, "intake", "Guided intake cards", "Legacy intake renderer when block rendering is enabled."),
+      toggleRow(state, "htmlWidgets", "Sandboxed HTML widgets", "Legacy widget renderer when block rendering is enabled."),
     ]),
     settingsGroup("Automatic polish", [
       toggleRow(state, "tablePolish", "Polish normal tables", "Restyle Markdown/tool tables so they read closer to Claude Cowork."),
-      toggleRow(state, "mediaEmbeds", "Preview video links", "Turn YouTube links into click-to-load video cards outside tables."),
+      toggleRow(state, "mediaEmbeds", "Preview video links", "Turn YouTube links into native preview cards outside tables."),
       toggleRow(state, "linkPreviews", "Open Graph-style link cards", "Show clean link cards outside tables without touching tabular data."),
       toggleRow(state, "autoPromptHelper", "Prompt helper", "Keep a copyable instruction contract for model responses that should become components."),
-      toggleRow(state, "promptInjection", "Automatic prompt injection", "Quietly append the component contract to tool/plugin-like requests."),
     ]),
     promptContract(settings),
   ]));
@@ -1238,9 +1606,11 @@ function promptContract(settings) {
     "When tool results contain analytics, funnel, campaign, revenue, retention, table, or comparison data, prefer a codex-component dashboard instead of prose-only output.",
     "Use a fenced JSON block with language codex-component.",
     "Supported dashboard sections: metric_strip, insight_grid, funnel, bar_chart, progress_bars, numbered_callouts, record_cards, alert_blocks, comparison_cards, timeline, pull_quote, tag_cloud, table, recommendations, action_chips.",
-    "For custom HTML/SVG visuals or interactive mini-tools, use a fenced show_widget JSON block with title, widget_code, and loading_messages.",
+    "Use show_widget/codex-widget only for compact diagrams, charts, mockups, art, or interactive mini-tools that cannot be expressed as dashboard sections.",
+    "Do not use show_widget for long lists, repeated rows, tables, record grids, or nested card layouts; use dashboard table, timeline, record_cards, or insight_grid instead.",
+    "If show_widget is necessary, keep it bounded, transparent, and mostly non-scrolling; avoid custom overflow containers, position:fixed, and giant repeated row markup.",
     "Use concise labels, short interpretations, and color intent: blue neutral, teal good, amber warning, red problem.",
-    "For video URLs, leave the URL as a normal link; Codex Components will embed it outside tables.",
+    "For video URLs, leave the URL as a normal link; Codex Components will preview it outside tables.",
     "For links with useful context, leave the URL as a normal link; Codex Components will show an Open Graph-style card outside tables.",
     "Do not put link preview cards inside tables.",
   ].join("\n");
@@ -1259,8 +1629,10 @@ function promptContract(settings) {
 }
 
 function installStyles(state) {
+  cleanupStaleStyles();
   const style = document.createElement("style");
   style.id = "codex-components-style";
+  style.dataset.codexmodStyle = "components";
   style.textContent = `
     .codex-components {
       --cm-bg: var(--color-background-primary, #ffffff);
@@ -1284,7 +1656,7 @@ function installStyles(state) {
       --cm-font-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
       color: var(--cm-text);
       font: 13px/1.42 var(--cm-font-sans);
-      margin: 12px 0;
+      margin: 10px 0 18px;
     }
     @media (prefers-color-scheme: dark) {
       .codex-components {
@@ -1316,10 +1688,10 @@ function installStyles(state) {
     .tone-green { --tone: var(--cm-green); --tone-bg: rgba(151,196,89,.14); --tone-border: rgba(151,196,89,.38); }
     .tone-gray { --tone: var(--cm-gray); --tone-bg: rgba(180,178,169,.12); --tone-border: rgba(180,178,169,.3); }
     .codexmod-component {
-      background: var(--cm-bg);
-      border: 1px solid var(--cm-border);
-      border-radius: 14px;
-      overflow: hidden;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      overflow: visible;
       max-width: 980px;
     }
     .codexmod-component-header {
@@ -1327,12 +1699,22 @@ function installStyles(state) {
       align-items: start;
       justify-content: space-between;
       gap: 16px;
-      padding: 16px 18px 10px;
-      border-bottom: 1px solid var(--cm-border);
+      padding: 0 0 10px;
+      border-bottom: 0;
     }
     .codexmod-component-title { margin: 0; font-size: 16px; font-weight: 500; }
     .codexmod-component-subtitle { margin: 4px 0 0; color: var(--cm-muted); font-size: 12px; }
-    .codexmod-component-toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+    .codexmod-component-toolbar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      opacity: .32;
+      transition: opacity .12s ease;
+    }
+    .codexmod-component:hover .codexmod-component-toolbar,
+    .codexmod-component:focus-within .codexmod-component-toolbar {
+      opacity: .82;
+    }
     .codexmod-component-toolbar button,
     .codexmod-actions button,
     .codexmod-intake-option {
@@ -1345,7 +1727,18 @@ function installStyles(state) {
       font: inherit;
       font-size: 12px;
     }
-    .codexmod-component-body { padding: 16px 18px 18px; display: grid; gap: 16px; }
+    .codexmod-component-toolbar button {
+      border-color: transparent;
+      background: transparent;
+      color: var(--cm-faint);
+      padding: 2px 0;
+    }
+    .codexmod-component-toolbar button:hover,
+    .codexmod-component-toolbar button:focus-visible {
+      color: var(--cm-text);
+      text-decoration: underline;
+    }
+    .codexmod-component-body { padding: 0; display: grid; gap: 18px; }
     .codexmod-section-title {
       margin: 0 0 9px;
       padding-bottom: 6px;
@@ -1364,9 +1757,9 @@ function installStyles(state) {
     }
     .codexmod-metric,
     .codexmod-insight {
-      background: var(--cm-panel);
-      border: 1px solid rgba(241,239,232,.06);
-      border-radius: 10px;
+      background: color-mix(in srgb, var(--cm-panel) 58%, transparent);
+      border: 1px solid var(--cm-border);
+      border-radius: 8px;
       padding: 13px;
     }
     .codexmod-label { display:block; color:var(--cm-faint); font-size:11px; text-transform:uppercase; letter-spacing:.07em; }
@@ -1626,29 +2019,45 @@ function installStyles(state) {
       font-weight: 700;
     }
     .codexmod-video-card {
-      display: flex;
-      align-items: stretch;
+      position: relative;
+      display: block;
       max-width: 720px;
       padding: 0;
       overflow: hidden;
+      aspect-ratio: 16 / 9;
+      background: #050505;
     }
-    .codexmod-video-thumb {
-      position: relative;
+    .codexmod-video-surface {
+      position: absolute;
+      inset: 0;
       display: block;
-      width: 172px;
-      min-height: 96px;
-      flex: 0 0 172px;
+      width: 100%;
+      height: 100%;
       padding: 0;
       border: 0;
-      background: #111;
-      cursor: pointer;
+      background: #050505;
       overflow: hidden;
+      color: inherit;
+    }
+    .codexmod-video-thumb {
+      cursor: pointer;
+      text-decoration: none;
     }
     .codexmod-video-thumb img {
+      position: absolute;
+      inset: 0;
       display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+    .codexmod-video-thumb::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,.68) 0%, rgba(0,0,0,.25) 42%, rgba(0,0,0,.2) 100%),
+        linear-gradient(90deg, rgba(0,0,0,.36) 0%, transparent 58%);
     }
     .codexmod-video-play {
       position: absolute;
@@ -1665,72 +2074,113 @@ function installStyles(state) {
       font-size: 16px;
       line-height: 1;
       box-shadow: 0 6px 18px rgba(0,0,0,.28);
+      z-index: 2;
     }
-    .codexmod-video-meta {
-      min-width: 0;
-      align-self: center;
-      padding: 12px;
+    .codexmod-video-overlay {
+      position: absolute;
+      z-index: 3;
+      left: 0;
+      top: 0;
+      right: 0;
+      display: grid;
+      gap: 3px;
+      align-content: start;
+      justify-items: start;
+      padding: 14px 16px 56px;
+      pointer-events: none;
     }
-    .codexmod-video-actions {
-      display:flex;
-      align-items:center;
-      gap: 8px;
-      margin-left: auto;
-      padding: 12px;
-      flex: 0 0 auto;
-    }
-    .codexmod-video-actions button {
-      border: 1px solid var(--color-border-tertiary, rgba(44,44,42,.16));
-      border-radius: 8px;
-      background: var(--color-background-primary, #ffffff);
-      color: var(--color-text-primary, #2c2c2a);
-      padding: 5px 8px;
-      font: inherit;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .codexmod-video-card-loaded {
-      display: block;
-      padding: 0;
-      overflow: hidden;
-      background: #111;
-    }
-    .codexmod-video-framebar {
-      display: flex;
-      justify-content: flex-end;
-      align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: var(--color-background-secondary, #242421);
-      border-bottom: 1px solid var(--color-border-tertiary, rgba(241,239,232,.16));
-    }
-    .codexmod-video-framebar button,
-    .codexmod-video-framebar a {
-      border: 1px solid var(--color-border-tertiary, rgba(241,239,232,.16));
-      border-radius: 8px;
-      background: var(--color-background-primary, #171714);
-      color: var(--color-text-primary, #f1efe8);
-      padding: 5px 8px;
-      font: inherit;
-      font-size: 12px;
+    .codexmod-video-title {
+      display: inline;
+      pointer-events: auto;
+      color: var(--color-accent-primary, #cdb8ff) !important;
+      font-size: 15px !important;
+      line-height: 1.3;
+      font-weight: 650;
       text-decoration: none;
-      cursor: pointer;
+      text-shadow: 0 1px 12px rgba(0,0,0,.72);
     }
-    .codexmod-video-card-loaded iframe {
+    .codexmod-video-title:hover,
+    .codexmod-video-title:focus-visible {
+      text-decoration: underline;
+    }
+    .codexmod-video-domain {
       display: block;
-      width: 100%;
-      aspect-ratio: 16 / 9;
-      border: 0;
-      background: #111;
+      color: rgba(255,255,255,.76) !important;
+      font-size: 12px !important;
+      line-height: 1.25;
+      text-shadow: 0 1px 10px rgba(0,0,0,.62);
     }
-    .codexmod-video-card-loaded a { display:block; padding: 10px 12px; }
     .codexmod-recommendations { margin:0; padding-left: 18px; display:grid; gap:8px; }
     .codexmod-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .codexmod-intake-question { margin:0; font-size:24px; line-height:1.2; font-family: Georgia, ui-serif, serif; font-weight:500; }
-    .codexmod-intake-options { display:grid; gap:10px; }
-    .codexmod-intake-option { display:flex; align-items:center; gap:14px; min-height:56px; text-align:left; background:#111; }
-    .codexmod-intake-option span { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:#050505; }
+    .codexmod-intake-options { display:grid; gap:8px; }
+    .codexmod-intake-option {
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-height:48px;
+      text-align:left;
+      background:transparent;
+    }
+    .codexmod-intake-option span {
+      display:grid;
+      place-items:center;
+      width:28px;
+      height:28px;
+      border-radius:7px;
+      background:color-mix(in srgb, var(--cm-panel) 62%, transparent);
+      color:var(--cm-muted);
+    }
+    .codexmod-intake-option-copy {
+      display:grid;
+      gap:2px;
+      min-width:0;
+    }
+    .codexmod-intake-option-copy small {
+      color:var(--cm-muted);
+      font-size:12px;
+      line-height:1.35;
+    }
     .codexmod-widget-frame { width:100%; border:0; background:transparent; display:block; }
+    .codexmod-widget-scrollbox {
+      width: 100%;
+      max-width: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      background: transparent;
+    }
+    .codexmod-widget-scrollbox iframe {
+      min-width: 100%;
+    }
+    .codexmod-widget-guard {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 6px;
+      padding: 2px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--cm-muted);
+      font-size: 12px;
+    }
+    .codexmod-widget-guard button {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--cm-faint);
+      padding: 2px 0;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .codexmod-widget-guard button:hover,
+    .codexmod-widget-guard button:focus-visible {
+      color: var(--cm-text);
+      text-decoration: underline;
+    }
     .codexmod-show-widget-body {
       max-width: 100%;
       margin: 12px 0;
@@ -1741,19 +2191,6 @@ function installStyles(state) {
       border: 0;
       background: transparent;
       overflow: hidden;
-    }
-    .codexmod-widget-loading {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      color: var(--color-text-tertiary, #888780);
-      font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    .codexmod-widget-loading span {
-      border: 1px solid var(--color-border-tertiary, rgba(241,239,232,.14));
-      border-radius: 999px;
-      padding: 5px 8px;
-      background: var(--color-background-secondary, rgba(127,127,127,.08));
     }
     .codexmod-error { padding: 14px; color: var(--cm-red); }
     .codexmod-settings {
@@ -1867,11 +2304,24 @@ function installStyles(state) {
     @media (max-width: 720px) {
       .codexmod-component-header { flex-direction: column; }
       .codexmod-bar-row { grid-template-columns: 1fr; }
-      .codexmod-video-card { flex-direction: column; }
-      .codexmod-video-thumb { width: 100%; flex-basis: auto; aspect-ratio: 16 / 9; }
-      .codexmod-video-actions { margin-left: 0; padding-top: 0; }
+      .codexmod-video-card { max-width: 100%; }
+      .codexmod-video-overlay { padding: 12px 13px 48px; }
+      .codexmod-video-title { font-size: 14px !important; }
     }
   `;
   document.head.appendChild(style);
   state.disposers.push(() => style.remove());
+}
+
+function cleanupStaleStyles() {
+  document.querySelectorAll("style").forEach((style) => {
+    const css = style.textContent || "";
+    if (
+      style.id === "codex-components-style"
+      || style.dataset?.codexmodStyle === "components"
+      || (css.includes(".codexmod-video-card") && css.includes(".codex-components"))
+    ) {
+      style.remove();
+    }
+  });
 }

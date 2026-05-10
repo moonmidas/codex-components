@@ -1,17 +1,21 @@
 #!/usr/bin/env node
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const scriptPath = fileURLToPath(import.meta.url);
+const root = resolve(dirname(scriptPath), "..");
 const codexPlusPlusRepo = "https://github.com/b-nnett/codex-plusplus.git";
 const sourceRoot = join(homedir(), ".codex-components", "codex-plusplus");
 const codexPlusPlusHome = process.env.CODEX_PLUSPLUS_HOME || defaultCodexPlusPlusHome();
 const tweaksDir = join(codexPlusPlusHome, "tweaks");
+const hadExistingCodexPlusPlusInstall = hasExistingCodexPlusPlusInstall(codexPlusPlusHome);
 
-main();
+if (process.argv[1] && scriptPath === resolve(process.argv[1])) {
+  main();
+}
 
 function main() {
   requirePlatform();
@@ -19,7 +23,11 @@ function main() {
   installCodexPlusPlus();
   installComponentsTweak();
   installComponentsSkill();
-  applyBennettDefaults();
+  if (hadExistingCodexPlusPlusInstall) {
+    console.log("Existing Codex++ install detected; preserving current tweak settings.");
+  } else {
+    applyBennettDefaults();
+  }
   console.log("\nCodex++ + Codex Components installed.");
   console.log("Restart Codex++ and open Settings -> Tweaks -> Codex Components.");
 }
@@ -54,9 +62,28 @@ function installCodexPlusPlus() {
 function installComponentsTweak() {
   const target = join(tweaksDir, "com.codexmod.components");
   mkdirSync(tweaksDir, { recursive: true });
+  removeDuplicateComponentsTweaks(tweaksDir, target);
   rmSync(target, { recursive: true, force: true });
   cpSync(join(root, "tweaks", "codex-components"), target, { recursive: true });
   console.log(`Installed Codex Components tweak -> ${target}`);
+}
+
+function removeDuplicateComponentsTweaks(rootTweaksDir, keepTarget) {
+  if (!existsSync(rootTweaksDir)) return;
+  for (const name of readdirSync(rootTweaksDir)) {
+    const candidate = join(rootTweaksDir, name);
+    if (candidate === keepTarget) continue;
+    const manifest = join(candidate, "manifest.json");
+    const index = join(candidate, "index.js");
+    const text = [
+      existsSync(manifest) ? readFileSync(manifest, "utf8") : "",
+      existsSync(index) ? readFileSync(index, "utf8") : "",
+    ].join("\n");
+    if (/com\.codexmod\.components|Codex Components|codexmod-component|codex-components/i.test(text)) {
+      rmSync(candidate, { recursive: true, force: true });
+      console.log(`Removed duplicate Codex Components tweak -> ${candidate}`);
+    }
+  }
 }
 
 function installComponentsSkill() {
@@ -96,6 +123,17 @@ function applyBennettDefaults() {
 function defaultCodexPlusPlusHome() {
   return join(homedir(), "Library", "Application Support", "codex-plusplus");
 }
+
+export function hasExistingCodexPlusPlusInstall(home) {
+  return (
+    existsSync(join(home, "tweaks")) ||
+    existsSync(join(home, "storage")) ||
+    existsSync(join(home, "config.json")) ||
+    existsSync(join(home, "runtime"))
+  );
+}
+
+export { removeDuplicateComponentsTweaks };
 
 function readJson(file) {
   if (!existsSync(file)) return {};

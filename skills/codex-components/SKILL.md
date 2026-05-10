@@ -1,11 +1,11 @@
 ---
 name: codex-components
-description: Use when creating Codex Components dashboards, intake cards, HTML widgets, polished tables, video embeds, or link-preview-friendly responses for Codex++.
+description: Use when creating Codex Components dashboards, intake cards, HTML widgets, polished tables, video previews, or link-preview-friendly responses for Codex++.
 ---
 
 # Codex Components
 
-Use Codex Components when the answer would be clearer as a compact visual surface: analytics, tool output, comparisons, funnels, tables, recommendations, embedded videos, or guided choices.
+Use Codex Components when the answer would be clearer as a compact visual surface: analytics, tool output, comparisons, funnels, tables, recommendations, video previews, or guided choices.
 
 ## Default Response Rule
 
@@ -21,11 +21,12 @@ Prefer a fenced `codex-component` JSON block when presenting structured results.
 }
 ```
 
-Use a fenced `show_widget` JSON block for custom HTML/SVG, interactive mini-tools, or one-off visuals that need more freedom than dashboard sections.
+Use a fenced `show_widget` JSON block only for compact custom HTML/SVG, diagrams, charts, mockups, art, or interactive mini-tools that need more freedom than dashboard sections. Keep widgets bounded and mostly non-scrolling; the local renderer owns the outer scroll frame.
 
 ```show_widget
 {
   "title": "metric_card",
+  "height": 360,
   "widget_code": "<div style=\"color:var(--color-text-primary);font-size:2rem\">42</div>",
   "loading_messages": ["Rendering..."]
 }
@@ -42,7 +43,21 @@ Codex Components can create the same six broad in-chat widget families:
 - `art`: generated SVG patterns, animated compositions, particles, abstract visuals, playful visual metaphors.
 - `elicitation`: forms and structured input collectors. Submit buttons should call `sendPrompt(text)` with the user's answers.
 
-If the user asks what Codex Components can show, create a `show_widget` gallery with six cards and buttons that call `sendPrompt()` for live examples.
+If the user asks what Codex Components can show, create a dashboard gallery first. For custom interactive demos, use `show_widget` with explicit `height`.
+
+## Output Standard
+
+Prefer renderer-native sections over hand-rolled HTML. Use:
+
+- `table` for repeated rows, lists with columns, log output, inventories, and verification grids.
+- `timeline` for step trackers and workflow status.
+- `record_cards` for small sets of rich records.
+- `insight_grid` for short explanation cards.
+- `progress_bars` or `bar_chart` for comparative metrics.
+- `intake` for choice prompts.
+- `show_widget` only for compact custom visuals or genuine interaction.
+
+Do not use `show_widget` for long lists, repeated row cards, tables, record grids, or nested panel/card layouts. Those create scroll traps and visual nesting in transcript UIs. If content is tall or row-based, express it as a dashboard `table`, `timeline`, `record_cards`, or concise `insight_grid`.
 
 ## Dashboard Sections
 
@@ -88,6 +103,8 @@ Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`,
 - In `show_widget`, write an HTML/SVG fragment, not a full document.
 - In `show_widget`, use inline CSS or a local `<style>` block and host CSS variables.
 - In `show_widget`, keep backgrounds transparent unless a surface is truly needed.
+- In `show_widget`, use explicit `height`, usually 360-720px. Avoid 1280px except for renderer stress tests.
+- In `show_widget`, avoid custom scroll containers, `overflow:auto`, `overflow:scroll`, and giant repeated row markup. The outer Codex Components frame owns scrolling.
 - In `show_widget`, call `sendPrompt(text)` from buttons when the widget should continue the chat.
 - In `show_widget`, call `openLink(url)` instead of direct `window.open`.
 - In `show_widget`, load external scripts only from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, or `unpkg.com`.
@@ -99,7 +116,7 @@ Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`,
 - Useful variables include `--color-background-primary`, `--color-background-secondary`, `--color-background-tertiary`, `--color-text-primary`, `--color-text-secondary`, `--color-text-tertiary`, `--color-border-tertiary`, `--font-sans`, `--font-serif`, `--font-mono`, `--border-radius-md`, `--border-radius-lg`, and aliases `--p`, `--s`, `--t`, `--bg2`, `--b`.
 - Use semantic color intent in text only: blue neutral, teal good, amber warning, red problem.
 - Do not put links inside tables when they should become previews.
-- Leave YouTube/video URLs as normal Markdown links outside tables so the renderer can embed them.
+- Leave YouTube/video URLs as normal Markdown links outside tables so the renderer can preview them.
 - Leave normal URLs outside tables when a link card would help.
 
 ## When Not To Use
