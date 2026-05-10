@@ -49,9 +49,9 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
   module.exports.__test = {
     createState,
     mountBlock,
-    renderDashboard,
     renderComponent,
-    renderIntake,
+    renderGroup,
+    renderChoices,
     renderHtmlWidget,
     renderShowWidget,
     mountShowWidgetFrame,
@@ -740,6 +740,8 @@ function renderDashboard(target, descriptor, raw, state) {
 }
 
 function renderComponent(target, descriptor, raw, state, options = {}) {
+  if (descriptor.type === "group") return renderGroup(target, descriptor, raw, state, options);
+  if (descriptor.type === "choices") return renderChoices(target, descriptor, raw, state, options);
   return renderLeafComponent(target, descriptor, raw, state, options);
 }
 
@@ -761,6 +763,27 @@ function renderLeafComponent(target, descriptor, raw, state, options = {}) {
   else if (descriptor.type === "recommendations") renderRecommendations(body, section);
   else if (descriptor.type === "actions") renderActions(body, section);
   else renderCallout(body, { body: `Unsupported component: ${descriptor.type}` });
+}
+
+function renderGroup(target, descriptor, raw, state) {
+  const body = renderShell(target, descriptor, raw, state, "codexmod-group");
+  const components = Array.isArray(descriptor.components) ? descriptor.components : [];
+  if (!components.length) {
+    renderCallout(body, { body: "No components provided." });
+    return;
+  }
+
+  for (const child of components) {
+    const childMount = el("div", { className: "codexmod-group-child" });
+    const childRaw = JSON.stringify(child, null, 2);
+    body.append(childMount);
+    const result = normalizeDescriptor(childRaw, "codex-component");
+    if (!result.ok) {
+      renderError(childMount, result.error, childRaw);
+      continue;
+    }
+    renderComponent(childMount, result.descriptor, childRaw, state);
+  }
 }
 
 function renderMetricStrip(body, section) {
@@ -1035,6 +1058,20 @@ function renderIntake(target, descriptor, raw, state) {
       el("div", { className: "codexmod-intake-option-copy" }, [
         el("strong", {}, [option.label || option.title || `Option ${index + 1}`]),
         option.description ? el("small", {}, [option.description]) : null,
+      ]),
+    ]),
+  )));
+}
+
+function renderChoices(target, descriptor, raw, state) {
+  const body = renderShell(target, descriptor, raw, state, "codexmod-choices");
+  const options = Array.isArray(descriptor.options) ? descriptor.options : [];
+  body.append(el("div", { className: "codexmod-choices-options" }, options.map((option, index) =>
+    el("button", { type: "button", className: "codexmod-choices-option", onclick: () => insertPrompt(option.prompt || option.label || "") }, [
+      el("span", {}, [String(index + 1)]),
+      el("div", { className: "codexmod-choices-option-copy" }, [
+        el("strong", {}, [option.label || option.title || `Option ${index + 1}`]),
+        option.description || option.body ? el("small", {}, [option.description || option.body]) : null,
       ]),
     ]),
   )));
@@ -1970,6 +2007,7 @@ function installStyles(state) {
     }
     .codexmod-component-toolbar button,
     .codexmod-actions button,
+    .codexmod-choices-option,
     .codexmod-intake-option {
       border: 1px solid var(--cm-border);
       border-radius: 7px;
@@ -1992,6 +2030,12 @@ function installStyles(state) {
       text-decoration: underline;
     }
     .codexmod-component-body { padding: 0; display: grid; gap: 18px; }
+    .codexmod-group .codexmod-component-body { gap: 14px; }
+    .codexmod-group-child { min-width: 0; }
+    .codexmod-group-child > .codexmod-component {
+      max-width: none;
+      padding-top: 2px;
+    }
     .codexmod-section-title {
       margin: 0 0 9px;
       padding-bottom: 6px;
@@ -2366,7 +2410,9 @@ function installStyles(state) {
     .codexmod-recommendations { margin:0; padding-left: 18px; display:grid; gap:8px; }
     .codexmod-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .codexmod-intake-question { margin:0; font-size:24px; line-height:1.2; font-family: Georgia, ui-serif, serif; font-weight:500; }
+    .codexmod-choices-options,
     .codexmod-intake-options { display:grid; gap:8px; }
+    .codexmod-choices-option,
     .codexmod-intake-option {
       display:flex;
       align-items:center;
@@ -2375,6 +2421,7 @@ function installStyles(state) {
       text-align:left;
       background:transparent;
     }
+    .codexmod-choices-option span,
     .codexmod-intake-option span {
       display:grid;
       place-items:center;
@@ -2384,11 +2431,13 @@ function installStyles(state) {
       background:color-mix(in srgb, var(--cm-panel) 62%, transparent);
       color:var(--cm-muted);
     }
+    .codexmod-choices-option-copy,
     .codexmod-intake-option-copy {
       display:grid;
       gap:2px;
       min-width:0;
     }
+    .codexmod-choices-option-copy small,
     .codexmod-intake-option-copy small {
       color:var(--cm-muted);
       font-size:12px;

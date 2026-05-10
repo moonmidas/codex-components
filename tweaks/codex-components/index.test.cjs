@@ -125,6 +125,42 @@ test("renders every declarative component type directly", () => {
   }
 });
 
+test("renders group as a component that contains other components", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "group",
+    version: 1,
+    title: "Worker Activity",
+    subtitle: "Recent activity across Codex.",
+    components: [
+      { type: "metrics", version: 1, title: "Overview", items: [{ label: "Active", value: "3" }] },
+      { type: "timeline", version: 1, title: "Recent", items: [{ title: "Worker finished", body: "Tests passed." }] },
+      { type: "choices", version: 1, title: "Next step", options: [{ label: "Inspect", prompt: "Inspect workers." }] },
+    ],
+  });
+
+  assert.ok(document.querySelector(".codexmod-group"));
+  assert.ok(document.querySelector(".codexmod-metric"));
+  assert.ok(document.querySelector(".codexmod-timeline-item"));
+  assert.ok(document.querySelector(".codexmod-choices-option"));
+});
+
+test("group does not render old nested component names", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "group",
+    version: 1,
+    title: "Invalid",
+    components: [{ type: "dashboard", version: 1, sections: [] }],
+  });
+
+  assert.match(document.querySelector(".codex-components").textContent, /Unknown component type: dashboard/);
+});
+
 test("renders intake cards and html widgets through direct renderers", () => {
   setupDom();
   const state = testState();
