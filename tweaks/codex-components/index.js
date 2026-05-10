@@ -654,8 +654,8 @@ function renderComponent(target, descriptor, raw, state, options = {}) {
 }
 
 function renderLeafComponent(target, descriptor, raw, state, options = {}) {
-  const body = options.body || renderShell(target, descriptor, raw, state, `codexmod-${descriptor.type}`);
-  const section = descriptor;
+  const body = options.embedded ? target : options.body || renderShell(target, descriptor, raw, state, `codexmod-${descriptor.type}`);
+  const section = options.embedded ? descriptor : withoutSectionTitle(descriptor);
   if (descriptor.type === "metrics") renderMetricStrip(body, section);
   else if (descriptor.type === "insights") renderInsightGrid(body, section);
   else if (descriptor.type === "funnel" || descriptor.type === "bars") renderBars(body, section);
@@ -671,6 +671,11 @@ function renderLeafComponent(target, descriptor, raw, state, options = {}) {
   else if (descriptor.type === "recommendations") renderRecommendations(body, section);
   else if (descriptor.type === "actions") renderActions(body, section);
   else renderCallout(body, { body: `Unsupported component: ${descriptor.type}` });
+}
+
+function withoutSectionTitle(descriptor) {
+  if (!descriptor?.title) return descriptor;
+  return { ...descriptor, title: "" };
 }
 
 function renderGroup(target, descriptor, raw, state) {
@@ -690,7 +695,7 @@ function renderGroup(target, descriptor, raw, state) {
       renderError(childMount, result.error, childRaw);
       continue;
     }
-    renderComponent(childMount, result.descriptor, childRaw, state);
+    renderComponent(childMount, result.descriptor, childRaw, state, { embedded: true });
   }
 }
 
@@ -1852,6 +1857,7 @@ function installStyles(state) {
     .tone-green { --tone: var(--cm-green); --tone-bg: rgba(151,196,89,.14); --tone-border: rgba(151,196,89,.38); }
     .tone-gray { --tone: var(--cm-gray); --tone-bg: rgba(180,178,169,.12); --tone-border: rgba(180,178,169,.3); }
     .codexmod-component {
+      position: relative;
       background: transparent;
       border: 0;
       border-radius: 0;
@@ -1863,21 +1869,26 @@ function installStyles(state) {
       align-items: start;
       justify-content: space-between;
       gap: 16px;
-      padding: 0 0 10px;
+      padding: 0 72px 10px 0;
       border-bottom: 0;
     }
     .codexmod-component-title { margin: 0; font-size: 16px; font-weight: 500; }
     .codexmod-component-subtitle { margin: 4px 0 0; color: var(--cm-muted); font-size: 12px; }
     .codexmod-component-toolbar {
+      position: absolute;
+      top: 0;
+      right: 0;
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
-      opacity: .32;
+      opacity: 0;
+      pointer-events: none;
       transition: opacity .12s ease;
     }
     .codexmod-component:hover .codexmod-component-toolbar,
     .codexmod-component:focus-within .codexmod-component-toolbar {
       opacity: .82;
+      pointer-events: auto;
     }
     .codexmod-component-toolbar button,
     .codexmod-actions button,
@@ -1905,10 +1916,7 @@ function installStyles(state) {
     .codexmod-component-body { padding: 0; display: grid; gap: 18px; }
     .codexmod-group .codexmod-component-body { gap: 14px; }
     .codexmod-group-child { min-width: 0; }
-    .codexmod-group-child > .codexmod-component {
-      max-width: none;
-      padding-top: 2px;
-    }
+    .codexmod-group-child > .codexmod-component { max-width: none; }
     .codexmod-section-title {
       margin: 0 0 9px;
       padding-bottom: 6px;

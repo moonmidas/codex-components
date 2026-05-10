@@ -1,5 +1,6 @@
 node_modules/
 .DS_Store
+.worktrees/
 *.log
 *.tmp
 *.bak
@@ -28,3 +29,6 @@ tweak-data/
 generated_images/
 screenshots/
 *.ips
+
+# Local superpowers planning artifacts
+docs/superpowers/plans/

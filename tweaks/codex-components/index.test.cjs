@@ -152,6 +152,53 @@ test("renders group as a component that contains other components", () => {
   assert.ok(document.querySelector(".codexmod-choices-option"));
 });
 
+test("top-level components do not repeat their title as a section heading", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "metrics",
+    version: 1,
+    title: "Project Snapshot",
+    items: [{ label: "Tests", value: "42 passing", tone: "teal" }],
+  });
+
+  assert.equal(document.querySelector(".codexmod-component-title").textContent, "Project Snapshot");
+  assert.equal(document.querySelectorAll(".codexmod-section-title").length, 0);
+});
+
+test("group children render as compact sections instead of nested titled shells", () => {
+  setupDom();
+  const state = testState();
+
+  mountJson(state, {
+    type: "group",
+    version: 1,
+    title: "Codex Components Demo",
+    components: [
+      {
+        type: "metrics",
+        version: 1,
+        title: "Launch Snapshot",
+        items: [{ label: "Tasks Done", value: "18/24", tone: "teal" }],
+      },
+      {
+        type: "timeline",
+        version: 1,
+        title: "Workflow",
+        items: [{ title: "Read the codebase", body: "Gather patterns.", status: "done" }],
+      },
+    ],
+  });
+
+  assert.equal(document.querySelectorAll(".codexmod-component").length, 1);
+  assert.deepEqual(
+    Array.from(document.querySelectorAll(".codexmod-section-title")).map((node) => node.textContent),
+    ["Launch Snapshot", "Workflow"],
+  );
+  assert.equal(document.querySelectorAll(".codexmod-component-toolbar").length, 1);
+});
+
 test("group does not render old nested component names", () => {
   setupDom();
   const state = testState();
