@@ -27,6 +27,7 @@ const {
   compareVersions,
   checkForUpdates,
   updatePromptText,
+  activeCodexPlusPlusHome,
   loadUpdateCache,
 } = tweak.__test;
 
@@ -1147,6 +1148,7 @@ test("keeps update check failures contained and visible in settings state", asyn
 
 test("settings page shows onboarding and an update action when a newer version is cached", () => {
   setupDom("<main></main><textarea></textarea>");
+  window.__codexpp_tweaks_dir__ = "/Users/moonmidas/Library/Application Support/codex-plusplus-copy/tweaks";
   localStorage.setItem("codexmod.components.update.v1", JSON.stringify({
     status: "available",
     latestVersion: "9.9.9",
@@ -1161,8 +1163,27 @@ test("settings page shows onboarding and an update action when a newer version i
 
   assert.match(root.textContent, /Start Here/);
   assert.match(root.textContent, /Update available/);
+  assert.match(root.textContent, /codex-plusplus-copy/);
   assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
   assert.match(document.querySelector("textarea").value, /Latest detected version: 9\.9\.9/);
+  assert.match(document.querySelector("textarea").value, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
+});
+
+test("settings page can manually refresh update state from GitHub", async () => {
+  setupDom("<main></main>");
+  tweakContext.fetch = async () => ({
+    ok: true,
+    json: async () => ({ version: "9.9.9" }),
+  });
+  const state = testState();
+  const root = document.querySelector("main");
+
+  renderSettingsPage(root, state);
+  findButton(root, "Refresh from GitHub").click();
+  await state.updatePromise;
+
+  assert.match(root.textContent, /Update available/);
+  assert.match(root.textContent, /Latest 9\.9\.9/);
 });
 
 test("dismisses and restores the onboarding panel from settings", () => {
@@ -1194,11 +1215,19 @@ test("settings prompt contract advertises only v0.2 component names", () => {
 });
 
 test("update prompt tells Codex to preserve existing Codex++ settings", () => {
-  const prompt = updatePromptText("9.9.9");
+  const prompt = updatePromptText("9.9.9", "/Users/moonmidas/Library/Application Support/codex-plusplus-copy");
 
   assert.match(prompt, /github\.com\/moonmidas\/codex-components/);
   assert.match(prompt, /Preserve existing Codex\+\+ settings/);
   assert.match(prompt, /Latest detected version: 9\.9\.9/);
+  assert.match(prompt, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
+});
+
+test("active Codex++ home is derived from the runtime tweaks directory", () => {
+  setupDom();
+  window.__codexpp_tweaks_dir__ = "/Users/moonmidas/Library/Application Support/codex-plusplus-copy/tweaks";
+
+  assert.equal(activeCodexPlusPlusHome(), "/Users/moonmidas/Library/Application Support/codex-plusplus-copy");
 });
 
 test("package, manifest, and runtime component versions stay in sync", () => {

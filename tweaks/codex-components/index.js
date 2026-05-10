@@ -67,6 +67,7 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     compareVersions,
     checkForUpdates,
     updatePromptText,
+    activeCodexPlusPlusHome,
     loadUpdateCache,
   };
 }
@@ -1684,11 +1685,12 @@ function updatePanel(state) {
       el("span", {}, ["Installed ", el("strong", {}, [CURRENT_VERSION])]),
       update.latestVersion ? el("span", {}, ["Latest ", el("strong", {}, [update.latestVersion])]) : null,
       update.checkedAt ? el("span", {}, ["Checked ", el("strong", {}, [formatCheckedAt(update.checkedAt)])]) : null,
+      activeCodexPlusPlusHome() ? el("span", {}, ["Home ", el("strong", {}, [activeCodexPlusPlusHome()])]) : null,
     ]),
     update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
     el("div", { className: "codexmod-settings-actions" }, [
-      update.status === "available" ? button("Update Codex Components", () => insertPrompt(updatePromptText(update.latestVersion))) : null,
-      button(update.status === "checking" ? "Checking..." : "Check again", () => checkForUpdates(state, { force: true })),
+      update.status === "available" ? button("Update Codex Components", () => insertPrompt(updatePromptText(update.latestVersion, activeCodexPlusPlusHome()))) : null,
+      button(update.status === "checking" ? "Checking..." : "Refresh from GitHub", () => checkForUpdates(state, { force: true })),
       state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
     ]),
   ]);
@@ -1724,12 +1726,21 @@ function componentGalleryPromptText() {
   return "Create a Codex Components gallery with one example of every supported v0.2 component type: group, metrics, insights, funnel, bars, progress, callouts, records, alerts, comparison, timeline, quote, tags, table, recommendations, actions, choices, and html.";
 }
 
-function updatePromptText(latestVersion = "") {
+function activeCodexPlusPlusHome() {
+  const tweaksDir = String(window.__codexpp_tweaks_dir__ || "").trim();
+  if (!tweaksDir) return "";
+  return tweaksDir.replace(/\/tweaks\/?$/, "");
+}
+
+function updatePromptText(latestVersion = "", codexPlusPlusHome = "") {
   const versionLine = latestVersion ? ` Latest detected version: ${latestVersion}.` : "";
+  const homeLine = codexPlusPlusHome
+    ? ` Use this exact active Codex++ home when running the installer: CODEX_PLUSPLUS_HOME="${codexPlusPlusHome}".`
+    : " If Codex++ is using a copied app home, detect and update that active home instead of assuming the default codex-plusplus folder.";
   return `Update Codex Components from GitHub:
 https://github.com/moonmidas/codex-components
 
-Please inspect the README and installer first, then run the macOS installer.${versionLine} Preserve existing Codex++ settings and tell me when to restart Codex++.`;
+Please inspect the README and installer first, then run the macOS installer.${versionLine}${homeLine} Preserve existing Codex++ settings and tell me when to restart Codex++.`;
 }
 
 function settingsGroup(title, rows) {
