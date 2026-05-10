@@ -1,4 +1,15 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
+const { renderMetrics } = require("./components/metrics/index.cjs");
+const { renderTimeline } = require("./components/timeline/index.cjs");
+const { renderTable } = require("./components/table/index.cjs");
+const { renderGroup: renderGroupModule } = require("./components/group/index.cjs");
+const { renderChoices: renderChoicesModule } = require("./components/choices/index.cjs");
+const {
+  renderHtml: renderHtmlModule,
+  mountHtmlFrame: mountHtmlFrameModule,
+  buildHtmlDocument: buildHtmlDocumentModule,
+} = require("./components/html/index.cjs");
+
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.0";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
@@ -653,10 +664,26 @@ function renderComponent(target, descriptor, raw, state, options = {}) {
   return renderLeafComponent(target, descriptor, raw, state, options);
 }
 
+function componentContext() {
+  return {
+    button,
+    el,
+    htmlTokenStyle,
+    insertPrompt,
+    normalizeDescriptor,
+    renderCallout,
+    renderComponent,
+    renderError,
+    renderShell,
+    sectionWrap,
+    toneClass,
+  };
+}
+
 function renderLeafComponent(target, descriptor, raw, state, options = {}) {
   const body = options.embedded ? target : options.body || renderShell(target, descriptor, raw, state, `codexmod-${descriptor.type}`);
   const section = options.embedded ? descriptor : withoutSectionTitle(descriptor);
-  if (descriptor.type === "metrics") renderMetricStrip(body, section);
+  if (descriptor.type === "metrics") renderMetrics(body, section, componentContext());
   else if (descriptor.type === "insights") renderInsightGrid(body, section);
   else if (descriptor.type === "funnel" || descriptor.type === "bars") renderBars(body, section);
   else if (descriptor.type === "progress") renderProgressBars(body, section);
@@ -664,10 +691,10 @@ function renderLeafComponent(target, descriptor, raw, state, options = {}) {
   else if (descriptor.type === "records") renderRecordCards(body, section);
   else if (descriptor.type === "alerts") renderAlertBlocks(body, section);
   else if (descriptor.type === "comparison") renderComparisonCards(body, section);
-  else if (descriptor.type === "timeline") renderTimeline(body, section);
+  else if (descriptor.type === "timeline") renderTimeline(body, section, componentContext());
   else if (descriptor.type === "quote") renderPullQuote(body, section);
   else if (descriptor.type === "tags") renderTagCloud(body, section);
-  else if (descriptor.type === "table") renderTable(body, section);
+  else if (descriptor.type === "table") renderTable(body, section, componentContext());
   else if (descriptor.type === "recommendations") renderRecommendations(body, section);
   else if (descriptor.type === "actions") renderActions(body, section);
   else renderCallout(body, { body: `Unsupported component: ${descriptor.type}` });
@@ -679,39 +706,7 @@ function withoutSectionTitle(descriptor) {
 }
 
 function renderGroup(target, descriptor, raw, state) {
-  const body = renderShell(target, descriptor, raw, state, "codexmod-group");
-  const components = Array.isArray(descriptor.components) ? descriptor.components : [];
-  if (!components.length) {
-    renderCallout(body, { body: "No components provided." });
-    return;
-  }
-
-  for (const child of components) {
-    const childMount = el("div", { className: "codexmod-group-child" });
-    const childRaw = JSON.stringify(child, null, 2);
-    body.append(childMount);
-    const result = normalizeDescriptor(childRaw, "codex-component");
-    if (!result.ok) {
-      renderError(childMount, result.error, childRaw);
-      continue;
-    }
-    renderComponent(childMount, result.descriptor, childRaw, state, { embedded: true });
-  }
-}
-
-function renderMetricStrip(body, section) {
-  const wrap = sectionWrap(section, "codexmod-metrics-section");
-  const grid = el("div", { className: "codexmod-metrics" });
-  for (const item of section.items || section.metrics || []) {
-    grid.append(el("article", { className: `codexmod-metric ${toneClass(item.tone || item.color)}` }, [
-      el("span", { className: "codexmod-label" }, [item.label || item.name || "Metric"]),
-      el("strong", { className: "codexmod-value" }, [String(item.value ?? "")]),
-      item.sparkline ? renderSparkline(item.sparkline, item.tone || item.color) : null,
-      item.delta ? el("span", { className: "codexmod-note" }, [trendIcon(item.trend || item.status), item.delta]) : null,
-    ]));
-  }
-  wrap.append(grid);
-  body.append(wrap);
+  return renderGroupModule(target, descriptor, raw, state, componentContext());
 }
 
 function renderInsightGrid(body, section) {
@@ -821,23 +816,6 @@ function renderComparisonCards(body, section) {
   body.append(wrap);
 }
 
-function renderTimeline(body, section) {
-  const wrap = sectionWrap(section, "codexmod-timeline-section");
-  const list = el("ol", { className: "codexmod-timeline" });
-  for (const item of section.items || section.steps || []) {
-    list.append(el("li", { className: `codexmod-timeline-item ${toneClass(item.tone || item.status)}` }, [
-      el("span", { className: "codexmod-timeline-dot" }, [timelineIcon(item.status || item.tone)]),
-      el("div", {}, [
-        el("strong", {}, [item.title || item.label || "Step"]),
-        item.body ? el("p", {}, [item.body]) : null,
-        item.meta ? el("span", { className: "codexmod-timeline-meta" }, [item.meta]) : null,
-      ]),
-    ]));
-  }
-  wrap.append(list);
-  body.append(wrap);
-}
-
 function renderPullQuote(body, section) {
   const wrap = sectionWrap(section, "codexmod-pullquote-section");
   wrap.append(el("blockquote", { className: `codexmod-pullquote ${toneClass(section.tone || section.color)}` }, [
@@ -869,17 +847,6 @@ function renderAlertBlocks(body, section) {
   body.append(wrap);
 }
 
-function renderTable(body, section) {
-  const columns = section.columns || [];
-  const table = el("table", { className: "codexmod-table" }, [
-    el("thead", {}, [el("tr", {}, columns.map((c) => el("th", {}, [c.label || c.key || c])))]),
-    el("tbody", {}, (section.rows || []).map((row) => el("tr", {}, columns.map((c) => el("td", {}, [row[c.key || c] ?? ""]))))),
-  ]);
-  const wrap = sectionWrap(section, "codexmod-table-section");
-  wrap.append(table);
-  body.append(wrap);
-}
-
 function renderRecommendations(body, section) {
   const wrap = sectionWrap(section, "codexmod-recommendations-section");
   wrap.append(el("ul", { className: "codexmod-recommendations" }, (section.items || []).map((item) =>
@@ -894,22 +861,6 @@ function renderActions(body, section) {
     button(item.label || item.text || "Action", () => insertPrompt(item.prompt || item.text || item.label || "")),
   )));
   body.append(wrap);
-}
-
-function renderSparkline(values, tone) {
-  const nums = Array.isArray(values) ? values.map(Number).filter((value) => Number.isFinite(value)) : [];
-  if (nums.length < 2) return null;
-  const min = Math.min(...nums);
-  const max = Math.max(...nums);
-  const range = max - min || 1;
-  const points = nums.map((value, index) => {
-    const x = (index / (nums.length - 1)) * 100;
-    const y = 28 - ((value - min) / range) * 24;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  return el("svg", { className: `codexmod-sparkline ${toneClass(tone)}`, viewBox: "0 0 100 32", role: "img" }, [
-    el("polyline", { points, fill: "none", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round" }),
-  ]);
 }
 
 function renderCallout(body, section) {
@@ -931,21 +882,6 @@ function toneClass(tone) {
   return "tone-blue";
 }
 
-function trendIcon(trend) {
-  const normalized = String(trend || "").toLowerCase();
-  if (["up", "increase", "good"].includes(normalized)) return "↗ ";
-  if (["down", "decrease", "bad"].includes(normalized)) return "↘ ";
-  if (["warning", "caution"].includes(normalized)) return "⚠ ";
-  return "";
-}
-
-function timelineIcon(status) {
-  const normalized = String(status || "").toLowerCase();
-  if (["complete", "completed", "success", "done", "green", "teal"].includes(normalized)) return "✓";
-  if (["warning", "blocked", "caution", "amber"].includes(normalized)) return "!";
-  return "";
-}
-
 function alertIcon(tone) {
   const normalized = String(tone || "").toLowerCase();
   if (["success", "good", "teal", "green"].includes(normalized)) return "✓";
@@ -959,222 +895,19 @@ function initials(text) {
 }
 
 function renderChoices(target, descriptor, raw, state) {
-  const body = renderShell(target, descriptor, raw, state, "codexmod-choices");
-  const options = Array.isArray(descriptor.options) ? descriptor.options : [];
-  body.append(el("div", { className: "codexmod-choices-options" }, options.map((option, index) =>
-    el("button", { type: "button", className: "codexmod-choices-option", onclick: () => insertPrompt(option.prompt || option.label || "") }, [
-      el("span", {}, [String(index + 1)]),
-      el("div", { className: "codexmod-choices-option-copy" }, [
-        el("strong", {}, [option.label || option.title || `Option ${index + 1}`]),
-        option.description || option.body ? el("small", {}, [option.description || option.body]) : null,
-      ]),
-    ]),
-  )));
+  return renderChoicesModule(target, descriptor, raw, state, componentContext());
 }
 
 function renderHtml(target, descriptor, raw, state) {
-  const body = renderShell(target, descriptor, raw, state, "codexmod-html");
-  mountHtmlFrame(body, descriptor, state);
+  return renderHtmlModule(target, descriptor, raw, state, componentContext());
 }
 
 function mountHtmlFrame(body, descriptor, state) {
-  body.innerHTML = "";
-  const frame = document.createElement("iframe");
-  const bounds = htmlFrameBounds(descriptor, 520);
-  frame.className = "codexmod-html-frame";
-  frame.setAttribute("sandbox", "allow-scripts");
-  frame.setAttribute("scrolling", "yes");
-  frame.srcdoc = buildHtmlDocument(descriptor.code || "");
-  mountHtmlScrollbox(body, frame, bounds, state);
-  attachFrameInteractionGuard(body, frame);
-  const onMessage = (event) => {
-    if (event.source !== frame.contentWindow) return;
-    const data = event.data || {};
-    if (data.method === "ui/notifications/size-changed" && data.params?.height) {
-      applyHtmlFrameHeight(frame, bounds, data.params.height);
-    } else if (data.method === "codex/send-prompt" && data.params?.text) {
-      insertPrompt(String(data.params.text));
-    } else if (data.method === "codex/open-link" && data.params?.url) {
-      window.open(String(data.params.url), "_blank", "noopener,noreferrer");
-    } else if (data.method === "codex/scroll-parent" && data.params?.deltaY) {
-      scrollNearestContainer(frame, Number(data.params.deltaY) || 0);
-    }
-  };
-  window.addEventListener("message", onMessage);
-  state.disposers.push(() => window.removeEventListener("message", onMessage));
-}
-
-function mountHtmlScrollbox(body, frame, bounds, state) {
-  const scrollbox = el("div", { className: "codexmod-html-scrollbox" });
-  scrollbox.style.height = `${bounds.initial}px`;
-  scrollbox.style.overflowY = "auto";
-  scrollbox.style.overflowX = "hidden";
-  scrollbox.style.overscrollBehavior = "contain";
-  frame.style.height = `${bounds.initial}px`;
-  scrollbox.append(frame);
-  body.append(scrollbox);
-  installHtmlScrollAssist(scrollbox, frame, state);
-  return scrollbox;
-}
-
-function installHtmlScrollAssist(scrollbox, frame, state) {
-  const onWheel = (event) => {
-    if (frame.dataset.codexmodInteraction === "on") return;
-    scrollHtmlFrame(scrollbox, event);
-  };
-  const onDocumentWheel = (event) => {
-    if (frame.dataset.codexmodInteraction === "on") return;
-    if (!isPointerInside(event, scrollbox)) return;
-    scrollHtmlFrame(scrollbox, event);
-  };
-  scrollbox.addEventListener("wheel", onWheel, { passive: false });
-  document.addEventListener("wheel", onDocumentWheel, { passive: false, capture: true });
-  state?.disposers?.push?.(() => {
-    scrollbox.removeEventListener("wheel", onWheel);
-    document.removeEventListener("wheel", onDocumentWheel, { capture: true });
-  });
-}
-
-function scrollHtmlFrame(scrollbox, event) {
-  if (!scrollElementBy(scrollbox, Number(event.deltaY) || 0)) return false;
-  event.preventDefault?.();
-  event.stopPropagation?.();
-  return true;
-}
-
-function isPointerInside(event, node) {
-  const rect = node.getBoundingClientRect?.();
-  if (!rect) return false;
-  const x = Number(event.clientX);
-  const y = Number(event.clientY);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-}
-
-function htmlFrameBounds(descriptor, fallbackHeight) {
-  const requested = positiveNumber(descriptor.height) || fallbackHeight;
-  const explicitMax = positiveNumber(descriptor.max_height);
-  const max = explicitMax || Math.min(Math.max(requested, 360), 720);
-  const min = Math.min(requested, max);
-  return { initial: min, min, max };
-}
-
-function positiveNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : 0;
-}
-
-function applyHtmlFrameHeight(frame, bounds, measuredHeight) {
-  const measured = positiveNumber(measuredHeight);
-  const contentHeight = Math.max(bounds.min, measured || bounds.min);
-  const viewportHeight = Math.min(bounds.max, contentHeight);
-  const scrollbox = frame.closest?.(".codexmod-html-scrollbox");
-  frame.style.height = `${contentHeight}px`;
-  if (scrollbox) {
-    scrollbox.style.height = `${viewportHeight}px`;
-    scrollbox.classList.toggle("codexmod-html-scrollbox-scrollable", contentHeight > bounds.max);
-  } else {
-    frame.style.height = `${viewportHeight}px`;
-    frame.classList.toggle("codexmod-html-frame-scrollable", contentHeight > bounds.max);
-  }
-}
-
-function scrollNearestContainer(node, deltaY) {
-  if (!deltaY) return;
-  for (let current = node?.parentElement; current; current = current.parentElement) {
-    if (isScrollableContainer(current) && scrollElementBy(current, deltaY)) return;
-  }
-  const scroller = document.scrollingElement || document.documentElement;
-  if (!scrollElementBy(scroller, deltaY)) scroller.scrollTop += deltaY;
-}
-
-function isScrollableContainer(node) {
-  if (!node) return false;
-  if (node.classList?.contains("codexmod-html-scrollbox")) return node.scrollHeight > node.clientHeight;
-  const style = getComputedStyle(node);
-  return /(auto|scroll|overlay)/.test(style.overflowY || "") && node.scrollHeight > node.clientHeight;
-}
-
-function scrollElementBy(node, deltaY) {
-  if (!node || !deltaY) return false;
-  const maxScroll = Math.max(0, node.scrollHeight - node.clientHeight);
-  if (maxScroll <= 1) return false;
-  const current = node.scrollTop || 0;
-  const next = Math.min(maxScroll, Math.max(0, current + deltaY));
-  if (next === current) return false;
-  node.scrollTop = next;
-  return true;
-}
-
-function attachFrameInteractionGuard(container, frame, label = "Scroll-safe mode") {
-  if (!container || frame.dataset.codexmodInteraction) return;
-  frame.dataset.codexmodInteraction = "off";
-  frame.style.pointerEvents = "none";
-  const toggle = button("Enable interaction", () => {
-    const active = frame.dataset.codexmodInteraction === "on";
-    frame.dataset.codexmodInteraction = active ? "off" : "on";
-    frame.style.pointerEvents = active ? "none" : "auto";
-    toggle.textContent = active ? "Enable interaction" : "Disable interaction";
-  });
-  const guard = el("div", { className: "codexmod-html-guard" }, [
-    el("span", {}, [label]),
-    toggle,
-  ]);
-  const anchor = frame.closest?.(".codexmod-html-scrollbox") || frame;
-  container.insertBefore(guard, anchor);
+  return mountHtmlFrameModule(body, descriptor, state, componentContext());
 }
 
 function buildHtmlDocument(componentCode) {
-  const code = sanitizeHtmlCode(componentCode);
-  const tokens = htmlTokenStyle();
-  const svgMode = code.trimStart().toLowerCase().startsWith("<svg");
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>${tokens}
-html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary);font:inherit;overflow:hidden;}
-*{box-sizing:border-box}
-a{color:inherit}
-.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-</style></head><body>${code}<script>
-(() => {
-  window.sendPrompt = (text) => parent.postMessage({ method: "codex/send-prompt", params: { text: String(text || "") } }, "*");
-  window.openLink = (url) => parent.postMessage({ method: "codex/open-link", params: { url: String(url || "") } }, "*");
-  const contentHeight = () => Math.max(
-    document.documentElement.scrollHeight || 0,
-    document.body.scrollHeight || 0,
-    document.documentElement.offsetHeight || 0,
-    document.body.offsetHeight || 0,
-    document.documentElement.getBoundingClientRect().height || 0,
-    document.body.getBoundingClientRect().height || 0
-  );
-  const notifySize = () => parent.postMessage({ method: "ui/notifications/size-changed", params: { height: Math.ceil(contentHeight()) } }, "*");
-  window.addEventListener("wheel", (event) => {
-    const deltaY = Number(event.deltaY) || 0;
-    if (!deltaY) return;
-    event.preventDefault();
-    parent.postMessage({ method: "codex/scroll-parent", params: { deltaY } }, "*");
-  }, { passive: false });
-  if (typeof ResizeObserver === "function") {
-    new ResizeObserver(notifySize).observe(document.body);
-  } else {
-    let ticks = 0;
-    const timer = setInterval(() => {
-      ticks += 1;
-      notifySize();
-      if (ticks >= 12) clearInterval(timer);
-    }, 250);
-  }
-  window.addEventListener("load", notifySize);
-  if (typeof requestAnimationFrame === "function") requestAnimationFrame(notifySize);
-  else setTimeout(notifySize, 0);
-  ${svgMode ? "document.body.style.display='inline-block';" : ""}
-})();
-</script></body></html>`;
-}
-
-function sanitizeHtmlCode(componentCode) {
-  return String(componentCode || "")
-    .replace(/<script\b([^>]*)\bsrc=(["'])(?!https:\/\/(?:cdnjs\.cloudflare\.com|esm\.sh|cdn\.jsdelivr\.net|unpkg\.com)\/)[\s\S]*?<\/script>/gi, "")
-    .replace(/\blocalStorage\b/g, "undefined")
-    .replace(/\bsessionStorage\b/g, "undefined");
+  return buildHtmlDocumentModule(componentCode, componentContext());
 }
 
 function htmlTokenStyle() {

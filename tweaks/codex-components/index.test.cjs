@@ -228,6 +228,29 @@ test("renders choices through the direct renderer", () => {
   assert.ok(document.querySelector(".codexmod-choices-option"));
 });
 
+test("choices module inserts prompts through explicit context", () => {
+  setupDom();
+  const { renderChoices: renderChoicesModule } = require("./components/choices/index.cjs");
+  const target = document.createElement("div");
+  const inserted = [];
+  document.body.append(target);
+
+  renderChoicesModule(target, {
+    type: "choices",
+    version: 1,
+    title: "Choose",
+    options: [{ label: "Option A", prompt: "Pick A" }],
+  }, "{}", testState(), {
+    renderShell: renderTestShell,
+    el: documentEl,
+    insertPrompt: (text) => inserted.push(text),
+  });
+
+  document.querySelector(".codexmod-choices-option").click();
+
+  assert.deepEqual(inserted, ["Pick A"]);
+});
+
 test("choices does not repeat the title as a second question heading", () => {
   setupDom();
   const state = testState();
@@ -903,6 +926,23 @@ test("normalizes html descriptors and sanitizes disallowed browser APIs", () => 
   assert.doesNotMatch(html, /sessionStorage\.clear/);
 });
 
+test("html module exposes sanitizer and document helpers", () => {
+  setupDom();
+  const { buildHtmlDocument: buildFromModule, sanitizeHtmlCode } = require("./components/html/index.cjs");
+
+  const sanitized = sanitizeHtmlCode(`
+    <script src="https://evil.example/app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <button onclick="localStorage.setItem('x','y')">Go</button>
+  `);
+  const documentHtml = buildFromModule("<section>Hi</section>", { htmlTokenStyle: () => ":root{}" });
+
+  assert.doesNotMatch(sanitized, /evil\.example/);
+  assert.match(sanitized, /cdn\.jsdelivr\.net/);
+  assert.doesNotMatch(sanitized, /localStorage\.setItem/);
+  assert.match(documentHtml, /codex\/scroll-parent/);
+});
+
 test("deduplicates identical component blocks discovered through multiple DOM paths", () => {
   const raw = JSON.stringify({ type: "html", version: 1, code: "<div>Hi</div>" });
   const blocks = uniqueBlocks([
@@ -1368,6 +1408,31 @@ function findButton(root, text) {
   return button;
 }
 
+function renderTestShell(target, descriptor, raw, state, className) {
+  target.innerHTML = "";
+  const shell = documentEl("section", { className: `codexmod-component ${className}` });
+  const body = documentEl("div", { className: "codexmod-component-body" });
+  shell.append(body);
+  target.append(shell);
+  return body;
+}
+
+function documentEl(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value == null) continue;
+    if (key === "className") node.className = value;
+    else if (key === "onclick") node.addEventListener("click", value);
+    else if (key === "style") node.setAttribute("style", value);
+    else node.setAttribute(key, String(value));
+  }
+  for (const child of children.flat()) {
+    if (child == null) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
 function loadTweakForTest(context) {
   const module = { exports: {} };
   const filename = join(__dirname, "index.js");
@@ -1378,6 +1443,7 @@ function loadTweakForTest(context) {
     exports: module.exports,
     process,
     console,
+    require,
     URL,
     setTimeout,
     clearTimeout,
