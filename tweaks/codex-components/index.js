@@ -1,30 +1,24 @@
 /** @type {import("@codex-plusplus/sdk").Tweak} */
+const { el, button } = require("./core/dom.js");
+const {
+  COMPONENT_TYPES,
+  COMPONENT_TYPE_SET,
+  normalizeDescriptor,
+  isComponentLanguage,
+} = require("./core/schema.js");
+const { createShellHelpers } = require("./core/shell.js");
+const {
+  renderShell,
+  toolbar,
+  sectionWrap,
+  withoutSectionTitle,
+} = createShellHelpers({ copyText });
+
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
 const CURRENT_VERSION = "0.2.0";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
-const COMPONENT_TYPES = Object.freeze([
-  "group",
-  "metrics",
-  "insights",
-  "funnel",
-  "bars",
-  "progress",
-  "callouts",
-  "records",
-  "alerts",
-  "comparison",
-  "timeline",
-  "quote",
-  "tags",
-  "table",
-  "recommendations",
-  "actions",
-  "choices",
-  "html",
-]);
-const COMPONENT_TYPE_SET = new Set(COMPONENT_TYPES);
 
 module.exports = {
   start(api) {
@@ -63,6 +57,14 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     installRenderer,
     loadSettings,
     isComponentLanguage,
+    COMPONENT_TYPES,
+    COMPONENT_TYPE_SET,
+    el,
+    button,
+    renderShell,
+    toolbar,
+    sectionWrap,
+    withoutSectionTitle,
     renderSettingsPage,
     compareVersions,
     checkForUpdates,
@@ -473,10 +475,6 @@ function detectLanguage(node) {
   return "";
 }
 
-function isComponentLanguage(language) {
-  return String(language || "").trim() === "codex-component";
-}
-
 function isCandidateJsonLanguage(language) {
   return ["codex", "json", ""].includes(String(language || "").trim());
 }
@@ -492,29 +490,6 @@ function looksLikeComponentJson(raw) {
   } catch {
     return false;
   }
-}
-
-function normalizeDescriptor(raw, language) {
-  let descriptor;
-  try {
-    descriptor = JSON.parse(raw);
-  } catch (error) {
-    return { ok: false, error: `Invalid component JSON: ${error.message}` };
-  }
-  if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) {
-    return { ok: false, error: "Component descriptor must be an object." };
-  }
-  if (typeof descriptor.type !== "string" || !descriptor.type.trim()) {
-    return { ok: false, error: "Component descriptor requires a type." };
-  }
-  if (typeof descriptor.version !== "number") {
-    return { ok: false, error: "Component descriptor requires a numeric version." };
-  }
-  descriptor.type = descriptor.type.trim();
-  if (!COMPONENT_TYPE_SET.has(descriptor.type)) {
-    return { ok: false, error: `Unknown component type: ${descriptor.type}` };
-  }
-  return { ok: true, descriptor };
 }
 
 function mountBlock(state, block) {
@@ -621,31 +596,6 @@ function hasOwnCodeBlockChrome(parent, rawStart, language) {
   });
 }
 
-function renderShell(target, descriptor, raw, state, className) {
-  target.innerHTML = "";
-  const shell = el("section", { className: `codexmod-component ${className}` });
-  const header = el("header", { className: "codexmod-component-header" }, [
-    el("div", {}, [
-      el("h3", { className: "codexmod-component-title" }, [descriptor.title || "Component"]),
-      descriptor.subtitle ? el("p", { className: "codexmod-component-subtitle" }, [descriptor.subtitle]) : null,
-    ]),
-    toolbar(descriptor, raw, state),
-  ]);
-  const body = el("div", { className: "codexmod-component-body" });
-  shell.append(header, body);
-  target.append(shell);
-  return body;
-}
-
-function toolbar(descriptor, raw, state) {
-  const bar = el("div", { className: "codexmod-component-toolbar" });
-  const copy = button("Copy", () => copyText(raw || JSON.stringify(descriptor, null, 2), state));
-  copy.setAttribute("aria-label", "Copy component JSON");
-  copy.setAttribute("title", "Copy component JSON");
-  bar.append(copy);
-  return bar;
-}
-
 function renderComponent(target, descriptor, raw, state, options = {}) {
   if (descriptor.type === "group") return renderGroup(target, descriptor, raw, state, options);
   if (descriptor.type === "choices") return renderChoices(target, descriptor, raw, state, options);
@@ -671,11 +621,6 @@ function renderLeafComponent(target, descriptor, raw, state, options = {}) {
   else if (descriptor.type === "recommendations") renderRecommendations(body, section);
   else if (descriptor.type === "actions") renderActions(body, section);
   else renderCallout(body, { body: `Unsupported component: ${descriptor.type}` });
-}
-
-function withoutSectionTitle(descriptor) {
-  if (!descriptor?.title) return descriptor;
-  return { ...descriptor, title: "" };
 }
 
 function renderGroup(target, descriptor, raw, state) {
@@ -1529,32 +1474,6 @@ function renderError(target, message, raw) {
     el("p", {}, [message]),
     el("details", {}, [el("summary", {}, ["View source"]), el("pre", {}, [raw])]),
   ]));
-}
-
-function sectionWrap(section, className) {
-  return el("section", { className: `codexmod-section ${className}` }, [
-    section.title ? el("h4", { className: "codexmod-section-title" }, [section.title]) : null,
-  ]);
-}
-
-function el(tag, attrs = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs || {})) {
-    if (value == null) continue;
-    if (key === "className") node.className = value;
-    else if (key === "onclick") node.addEventListener("click", value);
-    else if (key === "style") node.setAttribute("style", value);
-    else node.setAttribute(key, String(value));
-  }
-  for (const child of children.flat()) {
-    if (child == null) continue;
-    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
-  }
-  return node;
-}
-
-function button(label, onClick) {
-  return el("button", { type: "button", onclick: onClick }, [label]);
 }
 
 async function copyText(text, state) {
