@@ -25,6 +25,7 @@ const {
   hasNearbyNativeRender,
   shouldDeferToNativeRenderer,
   loadSettings,
+  isComponentLanguage,
   renderSettingsPage,
   compareVersions,
   checkForUpdates,
@@ -966,6 +967,54 @@ test("forces legacy component block rendering off even when stale settings enabl
   assert.equal(settings.mediaEmbeds, true);
   assert.equal(settings.linkPreviews, true);
   assert.equal(settings.promptInjection, false);
+});
+
+test("recognizes only the v0.2 component schema", () => {
+  setupDom();
+  const allowed = {
+    group: { type: "group", version: 1, components: [] },
+    metrics: { type: "metrics", version: 1 },
+    insights: { type: "insights", version: 1 },
+    funnel: { type: "funnel", version: 1 },
+    bars: { type: "bars", version: 1 },
+    progress: { type: "progress", version: 1 },
+    callouts: { type: "callouts", version: 1 },
+    records: { type: "records", version: 1 },
+    alerts: { type: "alerts", version: 1 },
+    comparison: { type: "comparison", version: 1 },
+    timeline: { type: "timeline", version: 1 },
+    quote: { type: "quote", version: 1 },
+    tags: { type: "tags", version: 1 },
+    table: { type: "table", version: 1 },
+    recommendations: { type: "recommendations", version: 1 },
+    actions: { type: "actions", version: 1 },
+    choices: { type: "choices", version: 1 },
+    html: { type: "html", version: 1, code: "<div>Advanced</div>" },
+  };
+
+  for (const [type, descriptor] of Object.entries(allowed)) {
+    const result = normalizeDescriptor(JSON.stringify(descriptor), "codex-component");
+    assert.equal(result.ok, true, `${type} should be accepted`);
+    assert.equal(result.descriptor.type, type);
+  }
+});
+
+test("rejects pre-reset component type names instead of aliasing them", () => {
+  setupDom();
+  const oldTypes = ["dashboard", "intake", "html_widget", "show_widget"];
+
+  for (const type of oldTypes) {
+    const result = normalizeDescriptor(JSON.stringify({ type, version: 1 }), "codex-component");
+    assert.equal(result.ok, false, `${type} should be rejected`);
+    assert.match(result.error, /Unknown component type/);
+  }
+});
+
+test("only codex-component fences are component fences", () => {
+  assert.equal(isComponentLanguage("codex-component"), true);
+  assert.equal(isComponentLanguage("codex-widget"), false);
+  assert.equal(isComponentLanguage("show_widget"), false);
+  assert.equal(isComponentLanguage("show-widget"), false);
 });
 
 test("compares semantic versions for update checks", () => {

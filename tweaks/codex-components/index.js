@@ -4,6 +4,27 @@ const CURRENT_VERSION = "0.1.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const COMPONENT_TYPES = Object.freeze([
+  "group",
+  "metrics",
+  "insights",
+  "funnel",
+  "bars",
+  "progress",
+  "callouts",
+  "records",
+  "alerts",
+  "comparison",
+  "timeline",
+  "quote",
+  "tags",
+  "table",
+  "recommendations",
+  "actions",
+  "choices",
+  "html",
+]);
+const COMPONENT_TYPE_SET = new Set(COMPONENT_TYPES);
 
 module.exports = {
   start(api) {
@@ -43,6 +64,7 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     hasNearbyNativeRender,
     shouldDeferToNativeRenderer,
     loadSettings,
+    isComponentLanguage,
     renderSettingsPage,
     compareVersions,
     checkForUpdates,
@@ -327,10 +349,9 @@ function pushAllowedBlock(blocks, allowBlock, block) {
 
 function isLocallyOwnedBlock(block) {
   const language = String(block.language || "").trim();
-  if (language === "codex-widget" || language === "show_widget" || language === "show-widget") return true;
   const result = normalizeDescriptor(block.raw, language);
   if (!result.ok) return isIncompleteComponentJson(block.raw, result.error);
-  return ["dashboard", "intake", "html_widget", "show_widget"].includes(result.descriptor.type);
+  return COMPONENT_TYPE_SET.has(result.descriptor.type);
 }
 
 function uniqueBlocks(blocks) {
@@ -393,7 +414,7 @@ function collectTextFenceBlocks(state, blocks, allowBlock = () => true) {
   while (textNode && checked < 800) {
     checked += 1;
     const text = textNode.textContent || "";
-    if (text.includes("```codex-component") || text.includes("```codex-widget") || text.includes("```show_widget")) {
+    if (text.includes("```codex-component")) {
       const source = nearestRenderableSource(textNode);
       if (source && !isComposerSurface(source) && !seen.has(source) && !shouldSkipNode(state, source)) {
         for (const block of blocksFromText(state, source, source.textContent || text, shouldHideSource(source))) {
@@ -415,9 +436,6 @@ function nearestRenderableSource(textNode) {
 function shouldHideSource(source) {
   const text = (source.textContent || "").trim();
   return text.startsWith("```codex-component")
-    || text.startsWith("```codex-widget")
-    || text.startsWith("```show_widget")
-    || text.startsWith("```show-widget")
     || isComponentLanguage(detectLanguage(source));
 }
 
@@ -460,7 +478,7 @@ function detectLanguage(node) {
 }
 
 function isComponentLanguage(language) {
-  return ["codex-component", "codex-widget", "show_widget", "show-widget"].includes(String(language || "").trim());
+  return String(language || "").trim() === "codex-component";
 }
 
 function isCandidateJsonLanguage(language) {
@@ -473,7 +491,7 @@ function looksLikeComponentJson(raw) {
     return descriptor
       && typeof descriptor === "object"
       && !Array.isArray(descriptor)
-      && (["dashboard", "intake", "html_widget", "show_widget"].includes(descriptor.type) || typeof descriptor.widget_code === "string")
+      && COMPONENT_TYPE_SET.has(descriptor.type)
       && (descriptor.version === undefined || typeof descriptor.version === "number");
   } catch {
     return false;
@@ -490,14 +508,6 @@ function normalizeDescriptor(raw, language) {
   if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) {
     return { ok: false, error: "Component descriptor must be an object." };
   }
-  if (!descriptor.version && (language === "codex-widget" || language === "show_widget" || language === "show-widget" || descriptor.widget_code)) {
-    descriptor.version = 1;
-  }
-  if (!descriptor.type && (language === "show_widget" || language === "show-widget" || descriptor.widget_code)) {
-    descriptor.type = "show_widget";
-  } else if (!descriptor.type && language === "codex-widget") {
-    descriptor.type = "html_widget";
-  }
   if (typeof descriptor.type !== "string" || !descriptor.type.trim()) {
     return { ok: false, error: "Component descriptor requires a type." };
   }
@@ -505,6 +515,9 @@ function normalizeDescriptor(raw, language) {
     return { ok: false, error: "Component descriptor requires a numeric version." };
   }
   descriptor.type = descriptor.type.trim();
+  if (!COMPONENT_TYPE_SET.has(descriptor.type)) {
+    return { ok: false, error: `Unknown component type: ${descriptor.type}` };
+  }
   return { ok: true, descriptor };
 }
 
@@ -664,9 +677,6 @@ function hasOwnCodeBlockChrome(parent, rawStart, language) {
     "json",
     "codex",
     "codex-component",
-    "codex-widget",
-    "show_widget",
-    "show-widget",
   ].filter(Boolean).map((label) => String(label).toLowerCase());
   return Array.from(parent.children || []).some((child) => {
     const text = (child.textContent || "").trim();
