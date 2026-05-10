@@ -1,117 +1,136 @@
 ---
 name: codex-components
-description: Use when creating Codex Components dashboards, intake cards, HTML widgets, polished tables, video previews, or link-preview-friendly responses for Codex++.
+description: Use when creating Codex Components, structured visual summaries, choices, experimental HTML components, polished tables, video previews, or link-preview-friendly responses for Codex++.
 ---
 
 # Codex Components
 
-Use Codex Components when the answer would be clearer as a compact visual surface: analytics, tool output, comparisons, funnels, tables, recommendations, video previews, or guided choices.
+Use Codex Components when an answer is clearer as a compact visual surface: analytics, tool output, comparisons, funnels, tables, recommendations, video previews, or guided choices.
 
 ## Default Response Rule
 
-Prefer a fenced `codex-component` JSON block when presenting structured results. Keep prose short and put the scannable result in the component.
+Prefer fenced `codex-component` JSON blocks for structured results. Keep prose short and put the scannable result in the component.
 
 ```codex-component
 {
-  "type": "dashboard",
+  "type": "metrics",
   "version": 1,
   "title": "Short Title",
   "subtitle": "One-line context",
-  "sections": []
+  "items": [
+    { "label": "Active", "value": "12", "delta": "+3" }
+  ]
 }
 ```
 
-Use a fenced `show_widget` JSON block only for compact custom HTML/SVG, diagrams, charts, mockups, art, or interactive mini-tools that need more freedom than dashboard sections. Keep widgets bounded and mostly non-scrolling; the local renderer owns the outer scroll frame.
+Every component uses the same top-level shape:
 
-```show_widget
+- `type`: one supported component type.
+- `version`: `1`.
+- `title`: short visible title.
+- `subtitle`: optional one-line context.
+- Component-specific fields such as `items`, `columns`, `rows`, `options`, `components`, or `code`.
+
+Use `group` when several components belong together in one surface:
+
+```codex-component
 {
-  "title": "metric_card",
-  "height": 360,
-  "widget_code": "<div style=\"color:var(--color-text-primary);font-size:2rem\">42</div>",
-  "loading_messages": ["Rendering..."]
+  "type": "group",
+  "version": 1,
+  "title": "Launch Review",
+  "components": [
+    { "type": "metrics", "version": 1, "title": "Health", "items": [{ "label": "Pass", "value": "98%" }] },
+    { "type": "timeline", "version": 1, "title": "Next", "items": [{ "title": "Ship", "body": "Release the update.", "status": "done" }] }
+  ]
 }
 ```
 
-## Show Widget Types
+## Component Types
 
-Codex Components can create the same six broad in-chat widget families:
-
-- `diagrams`: flowcharts, architecture maps, state machines, org charts, ER diagrams. Prefer SVG with explicit coordinates.
-- `charts`: bar, line, pie, scatter, funnel, heatmap, choropleth, sparklines. Use simple SVG/HTML first; load Chart.js/D3 from an allowed CDN only when needed.
-- `mockups`: app screens, dashboards, forms, modals, cards, settings panels, nav bars, design-review prototypes.
-- `interactive`: sliders, toggles, calculators, quizzes, configurators, step-through explainers, anything with local JS state.
-- `art`: generated SVG patterns, animated compositions, particles, abstract visuals, playful visual metaphors.
-- `elicitation`: forms and structured input collectors. Submit buttons should call `sendPrompt(text)` with the user's answers.
-
-If the user asks what Codex Components can show, create a dashboard gallery first. For custom interactive demos, use `show_widget` with explicit `height`.
+- `group`: container for multiple `components`.
+- `metrics`: KPI strip with `items` containing `label`, `value`, optional `delta`, `trend`, `sparkline`, and `tone`.
+- `insights`: explanation cards with `title` and `body`.
+- `funnel`: ordered conversion steps with `label` and `value`.
+- `bars`: horizontal comparison bars with `label` and `value`.
+- `progress`: labeled percentages with `percent` or `value`.
+- `callouts`: ranked findings with `rank`, `value`, `title`, `body`, `recommendation`, and `tone`.
+- `records`: rich record cards with `title`, `subtitle`, `avatar`, `fields`, `pills`, and `tone`.
+- `alerts`: success/warning/danger/info notes with `title`, `body`, `tone`, and optional `icon`.
+- `comparison`: side-by-side options with `title`, `value` or `price`, `body`, `features`, `badge`, `featured`, and `tone`.
+- `timeline`: vertical step trackers with `title`, `body`, `status`, `meta`, and `tone`.
+- `quote`: serif quote block with `quote`, `source`, and `tone`.
+- `tags`: colored pill collections using `items`.
+- `table`: small tables with `columns` and `rows`.
+- `recommendations`: prioritized actions with `title` and `body`.
+- `actions`: follow-up prompt buttons with `label` and `prompt`.
+- `choices`: selectable follow-up options with `label`, optional `description`, and `prompt`.
+- `html`: experimental custom HTML/SVG for bounded visuals or advanced mini-tools.
 
 ## Output Standard
 
-Prefer renderer-native sections over hand-rolled HTML. Use:
+Prefer declarative components over hand-rolled HTML:
 
-- `table` for repeated rows, lists with columns, log output, inventories, and verification grids.
-- `timeline` for step trackers and workflow status.
-- `record_cards` for small sets of rich records.
-- `insight_grid` for short explanation cards.
-- `progress_bars` or `bar_chart` for comparative metrics.
-- `intake` for choice prompts.
-- `show_widget` only for compact custom visuals or genuine interaction.
+- Use `table` for repeated rows, log output, inventories, and verification grids.
+- Use `timeline` for step trackers and workflow status.
+- Use `records` for small sets of rich records.
+- Use `insights` for short explanation cards.
+- Use `progress`, `bars`, or `funnel` for quantitative comparisons.
+- Use `choices` when the user needs to pick a follow-up path.
+- Use `html` only for compact custom visuals or genuine interaction.
 
-Do not use `show_widget` for long lists, repeated row cards, tables, record grids, or nested panel/card layouts. Those create scroll traps and visual nesting in transcript UIs. If content is tall or row-based, express it as a dashboard `table`, `timeline`, `record_cards`, or concise `insight_grid`.
+Do not use `html` for long lists, repeated row cards, tables, record grids, or nested panel/card layouts. Those create scroll traps and visual nesting in transcript UIs. If content is tall or row-based, express it with `table`, `timeline`, `records`, `insights`, or `group`.
 
-## Dashboard Sections
+## HTML Component
 
-- `metric_strip`: top-line KPIs with `label`, `value`, and optional `delta`.
-- `insight_grid`: 2-6 cards with `title` and `body`.
-- `funnel`: ordered conversion steps with `label` and `value`.
-- `bar_chart`: horizontal comparison bars with `label` and `value`.
-- `progress_bars`: labeled percentages with colored horizontal progress tracks.
-- `numbered_callouts`: ranked findings with `rank`, `value`, `title`, `body`, `recommendation`, and `tone`.
-- `record_cards`: contact/account/receipt-like cards with `title`, `subtitle`, `avatar`, `fields`, `pills`, and `tone`.
-- `alert_blocks`: success/warning/danger/info notes with `title`, `body`, `tone`, and optional `icon`.
-- `comparison_cards`: side-by-side options with `title`, `value`/`price`, `body`, `features`, `badge`, `featured`, and `tone`.
-- `timeline`: vertical step trackers with `title`, `body`, `status`, `meta`, and `tone`.
-- `pull_quote`: serif italic quote blocks with `quote`, `source`, and `tone`.
-- `tag_cloud`: colored pill collections using `items` or `tags`.
-- `table`: small tables with `columns` and `rows`.
-- `recommendations`: prioritized actions with `title` and `body`.
-- `action_chips`: follow-up prompts with `label` and `prompt`.
+`html` is advanced and experimental. Use it only when the visual cannot be expressed with the declarative component types.
+
+```codex-component
+{
+  "type": "html",
+  "version": 1,
+  "title": "Compact Diagram",
+  "height": 360,
+  "code": "<svg role=\"img\" viewBox=\"0 0 400 180\"><title>Flow</title><desc>Simple process flow.</desc></svg>"
+}
+```
+
+HTML rules:
+
+- Write an HTML/SVG fragment in `code`, not a full document.
+- Use inline CSS or a local `<style>` block and host CSS variables.
+- Keep backgrounds transparent unless a surface is truly needed.
+- Use explicit `height`, usually 360-720px. Avoid 1280px except for renderer stress tests.
+- Avoid custom scroll containers, `overflow:auto`, `overflow:scroll`, and giant repeated row markup. The outer Codex Components frame owns scrolling.
+- Call `sendPrompt(text)` from buttons when the component should continue the chat.
+- Call `openLink(url)` instead of direct `window.open`.
+- Load external scripts only from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, or `unpkg.com`.
+- Do not use `localStorage`, `sessionStorage`, `position: fixed`, full-page white backgrounds, gradients, heavy shadows, or browser-default fonts.
+- Include an `sr-only` heading when the visual has no visible heading.
+- For SVG visuals, include `role="img"`, `<title>`, and `<desc>`.
 
 ## Visual Vocabulary
 
-Use these primitives before hand-rolling raw HTML:
+Use these primitives before custom HTML:
 
-- Numbered callouts for ranked findings and funnel leaks.
-- Metric cards for compact stat tiles, 2-4 columns.
-- Badges and pills for status, categories, versions, segments.
-- Alert blocks for important notes, risks, warnings, and success states.
-- Progress bars for percentage and completion comparisons.
-- Data record cards for users, accounts, receipts, contacts, issues, or sessions.
-- Comparison cards for pricing, plan selection, A/B variants, or tradeoffs. Mark the preferred card with `featured: true`.
-- Timelines for step trackers, launches, user journeys, or incident states.
-- Pull quotes for testimonials, interview excerpts, or sharp findings.
-- Tag clouds for topics, categories, labels, or segments.
-- Sparklines in metric cards via `sparkline: [1, 3, 2, 5]`.
-- `action_chips` for `sendPrompt`-style follow-ups.
+- Callouts for ranked findings and funnel leaks.
+- Metrics for compact stat tiles.
+- Badges and pills through `records`, `comparison`, and `tags`.
+- Alerts for important notes, risks, warnings, and success states.
+- Progress for percentage and completion comparisons.
+- Records for users, accounts, receipts, contacts, issues, or sessions.
+- Comparison for pricing, plan selection, A/B variants, or tradeoffs. Mark the preferred card with `featured: true`.
+- Timeline for step trackers, launches, user journeys, or incident states.
+- Quote for testimonials, interview excerpts, or sharp findings.
+- Tags for topics, categories, labels, or segments.
+- Actions and choices for follow-up prompts.
 
 Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`, `gray`. Choose colors semantically: blue neutral, teal good, amber caution, red problem.
 
 ## Style
 
 - Use short labels, one-line interpretations, and readable numbers.
-- Match Claude/Cowork typography: inherited/system sans for UI, 22/18/16px headings, mostly 400/500 weights, tabular numerals for metrics, serif italic only for pull quotes.
-- In `show_widget`, write an HTML/SVG fragment, not a full document.
-- In `show_widget`, use inline CSS or a local `<style>` block and host CSS variables.
-- In `show_widget`, keep backgrounds transparent unless a surface is truly needed.
-- In `show_widget`, use explicit `height`, usually 360-720px. Avoid 1280px except for renderer stress tests.
-- In `show_widget`, avoid custom scroll containers, `overflow:auto`, `overflow:scroll`, and giant repeated row markup. The outer Codex Components frame owns scrolling.
-- In `show_widget`, call `sendPrompt(text)` from buttons when the widget should continue the chat.
-- In `show_widget`, call `openLink(url)` instead of direct `window.open`.
-- In `show_widget`, load external scripts only from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, or `unpkg.com`.
-- In `show_widget`, do not use `localStorage`, `sessionStorage`, `position: fixed`, full-page white backgrounds, gradients, heavy shadows, or browser-default fonts.
-- For HTML widgets, include an `sr-only` heading when the visual has no visible heading.
-- For SVG widgets, include `role="img"`, `<title>`, and `<desc>`.
-- Prefer 12px and 14px text inside dense widgets; use font weights 400 or 500 unless emphasis truly needs more.
+- Match the host typography: inherited/system sans for UI, compact headings, mostly 400/500 weights, tabular numerals for metrics, serif italic only for quotes.
+- Prefer 12px and 14px text inside dense components; use font weights 400 or 500 unless emphasis truly needs more.
 - Keep scripts last so the visual can stream before behavior initializes.
 - Useful variables include `--color-background-primary`, `--color-background-secondary`, `--color-background-tertiary`, `--color-text-primary`, `--color-text-secondary`, `--color-text-tertiary`, `--color-border-tertiary`, `--font-sans`, `--font-serif`, `--font-mono`, `--border-radius-md`, `--border-radius-lg`, and aliases `--p`, `--s`, `--t`, `--bg2`, `--b`.
 - Use semantic color intent in text only: blue neutral, teal good, amber warning, red problem.
@@ -123,4 +142,4 @@ Tone values: `blue`, `teal`, `amber`, `red`, `purple`, `coral`, `pink`, `green`,
 
 Use normal prose for quick answers, sensitive data that should not be visually amplified, or code where the code itself is the artifact.
 
-Do not claim Cowork-style live artifacts yet. Current `show_widget` data is baked into the generated widget. Runtime MCP/tool calls require a separate permissioned bridge.
+Do not claim live components yet. Current component data is baked into the response. Runtime MCP/tool calls require a separate permissioned bridge.
