@@ -25,12 +25,11 @@ const {
   loadSettings,
   isComponentLanguage,
   renderSettingsPage,
-  compareVersions,
   checkForUpdates,
   updatePromptText,
   activeCodexPlusPlusHome,
   loadUpdateCache,
-  normalizeManifestResponse,
+  normalizeCommitResponse,
 } = tweak.__test;
 
 test("loads shared helpers through local CommonJS modules in the tweak VM", () => {
@@ -1318,22 +1317,13 @@ test("only codex-component fences are component fences", () => {
   assert.equal(isComponentLanguage("show-widget"), false);
 });
 
-test("compares semantic versions for update checks", () => {
-  assert.equal(compareVersions("0.1.1", "0.1.0"), 1);
-  assert.equal(compareVersions("0.1.0", "0.1.1"), -1);
-  assert.equal(compareVersions("0.1.0", "0.1.0"), 0);
-  assert.equal(compareVersions("0.10.0", "0.2.9"), 1);
-  assert.equal(compareVersions("1.0.0-beta.2", "1.0.0-beta.1"), 1);
+test("normalizes GitHub commit responses", () => {
+  assert.equal(normalizeCommitResponse({ sha: "abc123" }).sha, "abc123");
+  assert.equal(normalizeCommitResponse([{ sha: "def456" }]).sha, "def456");
+  assert.equal(normalizeCommitResponse({ object: { sha: "fedcba" } }).sha, "fedcba");
 });
 
-test("normalizes GitHub Contents API manifest responses", () => {
-  const encoded = Buffer.from(JSON.stringify({ version: "1.2.3" }), "utf8").toString("base64");
-
-  assert.equal(normalizeManifestResponse({ version: "1.2.4" }).version, "1.2.4");
-  assert.equal(normalizeManifestResponse({ encoding: "base64", content: encoded }).version, "1.2.3");
-});
-
-test("checks GitHub manifest and records an available update", async () => {
+test("checks GitHub commits and records an available update", async () => {
   setupDom();
   let requestedUrl = "";
   tweakContext.fetch = async (url, options) => {
@@ -1341,17 +1331,18 @@ test("checks GitHub manifest and records an available update", async () => {
     assert.equal(options.cache, "no-store");
     return {
       ok: true,
-      json: async () => ({ version: "9.9.9" }),
+      json: async () => ({ sha: "remote-commit-sha", html_url: "https://github.com/moonmidas/codex-components/commit/remote-commit-sha" }),
     };
   };
   const state = testState();
 
   const update = await checkForUpdates(state, { force: true });
 
-  assert.match(requestedUrl, /api\.github\.com\/repos\/moonmidas\/codex-components\/contents/);
+  assert.match(requestedUrl, /api\.github\.com\/repos\/moonmidas\/codex-components\/commits\/main/);
   assert.equal(update.status, "available");
-  assert.equal(update.latestVersion, "9.9.9");
-  assert.equal(loadUpdateCache().latestVersion, "9.9.9");
+  assert.equal(update.latestCommit, "remote-commit-sha");
+  assert.equal(update.latestCommitUrl, "https://github.com/moonmidas/codex-components/commit/remote-commit-sha");
+  assert.equal(loadUpdateCache().latestCommit, "remote-commit-sha");
 });
 
 test("uses cached update check results for non-forced checks inside the hourly window", async () => {
@@ -1361,7 +1352,7 @@ test("uses cached update check results for non-forced checks inside the hourly w
     fetchCount += 1;
     return {
       ok: true,
-      json: async () => ({ version: "0.1.0" }),
+      json: async () => ({ sha: "cached-remote-commit" }),
     };
   };
   const state = testState();
@@ -1384,7 +1375,7 @@ test("schedules update checks without fetching on startup", async () => {
     fetchCount += 1;
     return {
       ok: true,
-      json: async () => ({ version: "0.1.1" }),
+      json: async () => ({ sha: "scheduled-remote-commit" }),
     };
   };
   tweakContext.setInterval = (callback, delay) => {
@@ -1436,12 +1427,12 @@ test("keeps update check failures contained as manual updater state", async () =
   assert.equal(update.error, "");
 });
 
-test("settings page shows onboarding and an update action when a newer version is cached", () => {
+test("settings page shows onboarding and an update action when a newer commit is cached", () => {
   setupDom("<main></main><textarea></textarea>");
   window.__codexpp_tweaks_dir__ = "/Users/moonmidas/Library/Application Support/codex-plusplus-copy/tweaks";
   localStorage.setItem("codexmod.components.update.v1", JSON.stringify({
     status: "available",
-    latestVersion: "9.9.9",
+    latestCommit: "remote-commit-sha",
     checkedAt: Date.now(),
   }));
   const state = testState();
@@ -1455,7 +1446,7 @@ test("settings page shows onboarding and an update action when a newer version i
   assert.match(root.textContent, /Update available/);
   assert.match(root.textContent, /codex-plusplus-copy/);
   assert.match(document.querySelector("textarea").value, /Update Codex Components from GitHub/);
-  assert.match(document.querySelector("textarea").value, /Latest detected version: 9\.9\.9/);
+  assert.match(document.querySelector("textarea").value, /Latest detected commit: remote-commit-sha/);
   assert.match(document.querySelector("textarea").value, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
 });
 
@@ -1484,7 +1475,7 @@ test("settings page inserts update prompt from the primary update action", async
   setupDom("<main></main><textarea></textarea>");
   tweakContext.fetch = async () => ({
     ok: true,
-    json: async () => ({ version: "9.9.9" }),
+    json: async () => ({ sha: "primary-action-remote-commit" }),
   });
   const state = testState();
   const root = document.querySelector("main");
@@ -1524,11 +1515,11 @@ test("settings prompt contract advertises only v0.2 component names", () => {
 });
 
 test("update prompt tells Codex to preserve existing Codex++ settings", () => {
-  const prompt = updatePromptText("9.9.9", "/Users/moonmidas/Library/Application Support/codex-plusplus-copy");
+  const prompt = updatePromptText("remote-commit-sha", "/Users/moonmidas/Library/Application Support/codex-plusplus-copy");
 
   assert.match(prompt, /github\.com\/moonmidas\/codex-components/);
   assert.match(prompt, /Preserve existing Codex\+\+ settings/);
-  assert.match(prompt, /Latest detected version: 9\.9\.9/);
+  assert.match(prompt, /Latest detected commit: remote-commit-sha/);
   assert.match(prompt, /CODEX_PLUSPLUS_HOME="\/Users\/moonmidas\/Library\/Application Support\/codex-plusplus-copy"/);
 });
 

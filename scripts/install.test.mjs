@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { codexPlusPlusHomes, hasExistingCodexPlusPlusInstall, removeDuplicateComponentsTweaks } from "./install.mjs";
+import { codexPlusPlusHomes, hasExistingCodexPlusPlusInstall, removeDuplicateComponentsTweaks, stampTweakCommit } from "./install.mjs";
 
 test("detects an existing Codex++ home from user tweak state", () => {
   const root = mkdtempSync(join(tmpdir(), "codex-components-install-"));
@@ -64,6 +64,20 @@ test("discovers copied Codex++ homes for tweak refresh", () => {
       codexPlusPlusHomes(root, defaultHome).sort(),
       [defaultHome, copyHome].sort(),
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("stamps installed tweak with the source Git commit", () => {
+  const root = mkdtempSync(join(tmpdir(), "codex-components-install-"));
+  try {
+    writeFileSync(join(root, "index.js"), 'const CURRENT_COMMIT = "__CODEX_COMPONENTS_COMMIT__";\n');
+
+    stampTweakCommit(root, "abc123def456");
+
+    assert.equal(existsSync(join(root, "index.js")), true);
+    assert.match(readFileSync(join(root, "index.js"), "utf8"), /abc123def456/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

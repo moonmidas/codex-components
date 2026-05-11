@@ -37,7 +37,7 @@ The installer:
 - Normal Markdown table polish.
 - Native YouTube preview cards and Open Graph-style link cards outside tables.
 - A Settings page under Tweaks with onboarding, update checks, and a copyable prompt contract.
-- Startup and hourly update checks against the GitHub manifest, with an update button when a newer version exists.
+- Startup and hourly update checks against the latest GitHub commit, with an update button when a newer commit exists.
 - A `codex-components` skill that teaches Codex how to create components, video previews, and clean tables.
 
 ## Component Blocks
@@ -143,13 +143,13 @@ See [docs/examples/all-components.md](docs/examples/all-components.md) for one c
 
 ## Updates
 
-Codex Components checks for updates when the Codex++ tweak starts and then once every hour while Codex++ stays open. The live signal is the published tweak manifest:
+Codex Components checks for updates when the Codex++ tweak starts and then once every hour while Codex++ stays open. The live signal is the latest commit on the published branch:
 
 ```text
-https://raw.githubusercontent.com/moonmidas/codex-components/main/tweaks/codex-components/manifest.json
+https://api.github.com/repos/moonmidas/codex-components/commits/main
 ```
 
-If that manifest reports a version newer than the installed version, the Codex Components Settings page shows an **Update Codex Components** button. The button inserts a prompt that tells Codex to inspect this repo, run the installer, preserve existing Codex++ settings, and ask you to restart Codex++ when the update is complete.
+If GitHub reports a commit different from the installed tweak commit, the Codex Components Settings page shows an **Update Codex Components** button. The button inserts a prompt that tells Codex to inspect this repo, run the installer, preserve existing Codex++ settings, and ask you to restart Codex++ when the update is complete.
 
 ## Development
 

@@ -156,6 +156,8 @@ function createSettings({
     const update = state.updateCheck || defaultUpdateCheck();
     const status = updateStatusCopy(update);
     const codexPlusPlusHome = activeCodexPlusPlusHome();
+    const installedCommit = shortCommit(update.installedCommit);
+    const latestCommit = shortCommit(update.latestCommit);
     return el("section", { className: `codexmod-settings-group codexmod-update-panel is-${update.status}` }, [
       el("div", { className: "codexmod-settings-group-head" }, [
         el("div", {}, [
@@ -166,24 +168,34 @@ function createSettings({
       ]),
       el("div", { className: "codexmod-update-meta" }, [
         el("span", {}, ["Installed ", el("strong", {}, [currentVersion])]),
-        update.latestVersion ? el("span", {}, ["Latest ", el("strong", {}, [update.latestVersion])]) : null,
+        installedCommit ? el("span", {}, ["Commit ", el("strong", {}, [installedCommit])]) : null,
+        latestCommit ? el("span", {}, ["Latest ", el("strong", {}, [latestCommit])]) : null,
         update.checkedAt ? el("span", {}, ["Checked ", el("strong", {}, [formatCheckedAt(update.checkedAt)])]) : null,
         codexPlusPlusHome ? el("span", {}, ["Home ", el("strong", {}, [codexPlusPlusHome])]) : null,
       ]),
       update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
       el("div", { className: "codexmod-settings-actions" }, [
-        button("Update from GitHub", () => insertPrompt(updatePromptText(state.updateCheck?.latestVersion, codexPlusPlusHome))),
+        button("Update from GitHub", () => insertPrompt(updatePromptText(state.updateCheck?.latestCommit, codexPlusPlusHome))),
         state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
       ]),
     ]);
   }
 
   function updateStatusCopy(update) {
-    if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components manifest." };
-    if (update.status === "available") return { label: "Update available", tone: "tone-amber", body: `Version ${update.latestVersion} is available on GitHub.` };
-    if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components version." };
-    if (update.status === "manual") return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest version." };
-    return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest version." };
+    if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components commit." };
+    if (update.status === "available") {
+      const latest = shortCommit(update.latestCommit);
+      return { label: "Update available", tone: "tone-amber", body: latest ? `Commit ${latest} is available on GitHub.` : "A newer Codex Components commit is available on GitHub." };
+    }
+    if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components commit." };
+    if (update.status === "manual") return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest commit." };
+    return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest commit." };
+  }
+
+  function shortCommit(value) {
+    const commit = String(value || "").trim();
+    if (!commit || commit === "__CODEX_COMPONENTS_COMMIT__" || commit === "unknown") return "";
+    return commit.slice(0, 8);
   }
 
   function formatCheckedAt(timestamp) {

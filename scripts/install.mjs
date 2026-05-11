@@ -76,7 +76,26 @@ function installComponentsTweak(home) {
   removeDuplicateComponentsTweaks(homeTweaksDir, target);
   rmSync(target, { recursive: true, force: true });
   cpSync(join(root, "tweaks", "codex-components"), target, { recursive: true });
+  stampTweakCommit(target, installedComponentsCommit());
   console.log(`Installed Codex Components tweak -> ${target}`);
+}
+
+function installedComponentsCommit() {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0) return "unknown";
+  return result.stdout.trim() || "unknown";
+}
+
+export function stampTweakCommit(tweakDir, commit) {
+  const index = join(tweakDir, "index.js");
+  if (!existsSync(index)) return;
+  const source = readFileSync(index, "utf8");
+  const stamped = source.replaceAll("__CODEX_COMPONENTS_COMMIT__", commit || "unknown");
+  if (stamped !== source) writeFileSync(index, stamped);
 }
 
 function removeDuplicateComponentsTweaks(rootTweaksDir, keepTarget) {

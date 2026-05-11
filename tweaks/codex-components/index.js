@@ -34,25 +34,26 @@ const { createUpdateChecks } = __codexComponentsRequire("./core/update-checks.js
 const { createLinkPreviewHelpers } = __codexComponentsRequire("./media/links.js");
 
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
+const CURRENT_COMMIT = "__CODEX_COMPONENTS_COMMIT__";
 const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
-const UPDATE_MANIFEST_URL = "https://api.github.com/repos/moonmidas/codex-components/contents/tweaks/codex-components/manifest.json?ref=main";
+const UPDATE_COMMIT_URL = "https://api.github.com/repos/moonmidas/codex-components/commits/main";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 const updateChecks = createUpdateChecks({
+  currentCommit: CURRENT_COMMIT,
   currentVersion: CURRENT_VERSION,
   updateCacheKey: UPDATE_CACHE_KEY,
-  updateManifestUrl: UPDATE_MANIFEST_URL,
+  updateCommitUrl: UPDATE_COMMIT_URL,
   updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS,
   getRenderSettingsPage: () => renderSettingsPage,
 });
 const {
   activeCodexPlusPlusHome,
   checkForUpdates,
-  compareVersions,
   defaultUpdateCheck,
   loadUpdateCache,
-  normalizeManifestResponse,
+  normalizeCommitResponse,
   startUpdateChecks,
   updatePromptText,
 } = updateChecks;
@@ -132,12 +133,11 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     sectionWrap,
     withoutSectionTitle,
     renderSettingsPage,
-    compareVersions,
     checkForUpdates,
     updatePromptText,
     activeCodexPlusPlusHome,
     loadUpdateCache,
-    normalizeManifestResponse,
+    normalizeCommitResponse,
   };
 }
 
@@ -1989,6 +1989,8 @@ function createSettings({
     const update = state.updateCheck || defaultUpdateCheck();
     const status = updateStatusCopy(update);
     const codexPlusPlusHome = activeCodexPlusPlusHome();
+    const installedCommit = shortCommit(update.installedCommit);
+    const latestCommit = shortCommit(update.latestCommit);
     return el("section", { className: `codexmod-settings-group codexmod-update-panel is-${update.status}` }, [
       el("div", { className: "codexmod-settings-group-head" }, [
         el("div", {}, [
@@ -1999,24 +2001,34 @@ function createSettings({
       ]),
       el("div", { className: "codexmod-update-meta" }, [
         el("span", {}, ["Installed ", el("strong", {}, [currentVersion])]),
-        update.latestVersion ? el("span", {}, ["Latest ", el("strong", {}, [update.latestVersion])]) : null,
+        installedCommit ? el("span", {}, ["Commit ", el("strong", {}, [installedCommit])]) : null,
+        latestCommit ? el("span", {}, ["Latest ", el("strong", {}, [latestCommit])]) : null,
         update.checkedAt ? el("span", {}, ["Checked ", el("strong", {}, [formatCheckedAt(update.checkedAt)])]) : null,
         codexPlusPlusHome ? el("span", {}, ["Home ", el("strong", {}, [codexPlusPlusHome])]) : null,
       ]),
       update.error ? el("p", { className: "codexmod-settings-error" }, [update.error]) : null,
       el("div", { className: "codexmod-settings-actions" }, [
-        button("Update from GitHub", () => insertPrompt(updatePromptText(state.updateCheck?.latestVersion, codexPlusPlusHome))),
+        button("Update from GitHub", () => insertPrompt(updatePromptText(state.updateCheck?.latestCommit, codexPlusPlusHome))),
         state.settings.onboardingDismissed ? button("Show onboarding", () => showOnboarding(state)) : null,
       ]),
     ]);
   }
 
   function updateStatusCopy(update) {
-    if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components manifest." };
-    if (update.status === "available") return { label: "Update available", tone: "tone-amber", body: `Version ${update.latestVersion} is available on GitHub.` };
-    if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components version." };
-    if (update.status === "manual") return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest version." };
-    return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest version." };
+    if (update.status === "checking") return { label: "Checking", tone: "tone-blue", body: "Checking GitHub for the latest Codex Components commit." };
+    if (update.status === "available") {
+      const latest = shortCommit(update.latestCommit);
+      return { label: "Update available", tone: "tone-amber", body: latest ? `Commit ${latest} is available on GitHub.` : "A newer Codex Components commit is available on GitHub." };
+    }
+    if (update.status === "up_to_date") return { label: "Up to date", tone: "tone-teal", body: "You are running the latest published Codex Components commit." };
+    if (update.status === "manual") return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest commit." };
+    return { label: "Ready", tone: "tone-teal", body: "Update Codex Components from GitHub whenever you want the latest commit." };
+  }
+
+  function shortCommit(value) {
+    const commit = String(value || "").trim();
+    if (!commit || commit === "__CODEX_COMPONENTS_COMMIT__" || commit === "unknown") return "";
+    return commit.slice(0, 8);
   }
 
   function formatCheckedAt(timestamp) {
@@ -2106,9 +2118,10 @@ module.exports = { createSettings, DEFAULT_SETTINGS, SETTINGS_KEY };
 },
 "./core/update-checks.js": function(module, exports) {
 function createUpdateChecks({
+  currentCommit,
   currentVersion,
   updateCacheKey,
-  updateManifestUrl,
+  updateCommitUrl,
   updateCheckIntervalMs,
   getRenderSettingsPage,
 }) {
@@ -2120,8 +2133,10 @@ function createUpdateChecks({
   function defaultUpdateCheck() {
     return {
       status: "idle",
+      installedCommit: currentCommit,
       installedVersion: currentVersion,
-      latestVersion: "",
+      latestCommit: "",
+      latestCommitUrl: "",
       checkedAt: 0,
       error: "",
     };
@@ -2131,7 +2146,12 @@ function createUpdateChecks({
     try {
       const cached = JSON.parse(localStorage.getItem(updateCacheKey) || "{}");
       if (!cached || typeof cached !== "object") return defaultUpdateCheck();
-      return { ...defaultUpdateCheck(), ...cached, installedVersion: currentVersion };
+      return {
+        ...defaultUpdateCheck(),
+        ...cached,
+        installedCommit: currentCommit,
+        installedVersion: currentVersion,
+      };
     } catch {
       return defaultUpdateCheck();
     }
@@ -2154,22 +2174,29 @@ function createUpdateChecks({
     if (state.updatePromise) return state.updatePromise;
 
     const previous = state.updateCheck || defaultUpdateCheck();
-    state.updateCheck = { ...previous, status: "checking", installedVersion: currentVersion, error: "" };
+    state.updateCheck = {
+      ...previous,
+      status: "checking",
+      installedCommit: currentCommit,
+      installedVersion: currentVersion,
+      error: "",
+    };
     rerenderSettings(state);
 
     state.updatePromise = (async () => {
       try {
         if (typeof fetch !== "function") throw new Error("Fetch is unavailable in this renderer.");
-        const response = await fetch(updateManifestUrl, { cache: "no-store" });
+        const response = await fetch(updateCommitUrl, { cache: "no-store" });
         if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-        const manifest = normalizeManifestResponse(await response.json());
-        const latestVersion = String(manifest?.version || "").trim();
-        if (!latestVersion) throw new Error("Remote manifest did not include a version.");
-        const comparison = compareVersions(latestVersion, currentVersion);
+        const commit = normalizeCommitResponse(await response.json());
+        const latestCommit = String(commit?.sha || "").trim();
+        if (!latestCommit) throw new Error("Remote commit response did not include a SHA.");
         const next = {
-          status: comparison > 0 ? "available" : "up_to_date",
+          status: isSameCommit(latestCommit, currentCommit) ? "up_to_date" : "available",
+          installedCommit: currentCommit,
           installedVersion: currentVersion,
-          latestVersion,
+          latestCommit,
+          latestCommitUrl: String(commit?.html_url || "").trim(),
           checkedAt: Date.now(),
           error: "",
         };
@@ -2180,6 +2207,7 @@ function createUpdateChecks({
         const next = {
           ...previous,
           status: "manual",
+          installedCommit: currentCommit,
           installedVersion: currentVersion,
           checkedAt: Date.now(),
           error: "",
@@ -2202,56 +2230,29 @@ function createUpdateChecks({
     getRenderSettingsPage()(state.pageRoot, state);
   }
 
-  function compareVersions(a, b) {
-    const left = parseVersionParts(a);
-    const right = parseVersionParts(b);
-    const length = Math.max(left.length, right.length);
-    for (let index = 0; index < length; index += 1) {
-      const diff = (left[index] || 0) - (right[index] || 0);
-      if (diff !== 0) return diff > 0 ? 1 : -1;
-    }
-    return 0;
-  }
-
-  function parseVersionParts(version) {
-    return String(version || "")
-      .split(/[.-]/)
-      .map((part) => Number.parseInt(part, 10))
-      .filter((part) => Number.isFinite(part));
-  }
-
-  function normalizeManifestResponse(payload) {
-    if (payload?.version) return payload;
-    if (payload?.encoding === "base64" && typeof payload.content === "string") {
-      const json = decodeBase64(payload.content.replace(/\s/g, ""));
-      return JSON.parse(json);
+  function normalizeCommitResponse(payload) {
+    if (Array.isArray(payload)) return payload[0] || {};
+    if (payload?.sha) return payload;
+    if (payload?.object?.sha) {
+      return {
+        sha: payload.object.sha,
+        html_url: payload.object.html_url || payload.object.url || payload.html_url || "",
+      };
     }
     return payload;
   }
 
-  function decodeBase64(value) {
-    if (typeof atob === "function") return atob(value);
-    if (typeof Buffer !== "undefined") return Buffer.from(value, "base64").toString("utf8");
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-    let output = "";
-    let index = 0;
-    while (index < value.length) {
-      const enc1 = chars.indexOf(value.charAt(index++));
-      const enc2 = chars.indexOf(value.charAt(index++));
-      const enc3 = chars.indexOf(value.charAt(index++));
-      const enc4 = chars.indexOf(value.charAt(index++));
-      const chr1 = (enc1 << 2) | (enc2 >> 4);
-      const chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-      const chr3 = ((enc3 & 3) << 6) | enc4;
-      output += String.fromCharCode(chr1);
-      if (enc3 !== 64) output += String.fromCharCode(chr2);
-      if (enc4 !== 64) output += String.fromCharCode(chr3);
-    }
-    try {
-      return decodeURIComponent(escape(output));
-    } catch {
-      return output;
-    }
+  function isSameCommit(left, right) {
+    const a = cleanCommit(left);
+    const b = cleanCommit(right);
+    if (!a || !b) return false;
+    return a === b || a.startsWith(b) || b.startsWith(a);
+  }
+
+  function cleanCommit(value) {
+    const commit = String(value || "").trim();
+    if (!commit || commit === "__CODEX_COMPONENTS_COMMIT__" || commit === "unknown") return "";
+    return commit;
   }
 
   function activeCodexPlusPlusHome() {
@@ -2260,24 +2261,23 @@ function createUpdateChecks({
     return tweaksDir.replace(/\/tweaks\/?$/, "");
   }
 
-  function updatePromptText(latestVersion = "", codexPlusPlusHome = "") {
-    const versionLine = latestVersion ? ` Latest detected version: ${latestVersion}.` : "";
+  function updatePromptText(latestCommit = "", codexPlusPlusHome = "") {
+    const commitLine = latestCommit ? ` Latest detected commit: ${latestCommit}.` : "";
     const homeLine = codexPlusPlusHome
       ? ` Use this exact active Codex++ home when running the installer: CODEX_PLUSPLUS_HOME="${codexPlusPlusHome}".`
       : " If Codex++ is using a copied app home, detect and update that active home instead of assuming the default codex-plusplus folder.";
     return `Update Codex Components from GitHub:
 https://github.com/moonmidas/codex-components
 
-Please inspect the README and installer first, then run the macOS installer.${versionLine}${homeLine} Preserve existing Codex++ settings and tell me when to restart Codex++.`;
+Please inspect the README and installer first, then run the macOS installer.${commitLine}${homeLine} Preserve existing Codex++ settings and tell me when to restart Codex++.`;
   }
 
   return {
     activeCodexPlusPlusHome,
     checkForUpdates,
-    compareVersions,
     defaultUpdateCheck,
     loadUpdateCache,
-    normalizeManifestResponse,
+    normalizeCommitResponse,
     startUpdateChecks,
     updatePromptText,
   };
@@ -2522,25 +2522,26 @@ const { createUpdateChecks } = __codexComponentsRequire("./core/update-checks.js
 const { createLinkPreviewHelpers } = __codexComponentsRequire("./media/links.js");
 
 const TWEAK_BUILD = "2026-05-10-schema-reset-v1";
+const CURRENT_COMMIT = "__CODEX_COMPONENTS_COMMIT__";
 const CURRENT_VERSION = "0.2.1";
 const UPDATE_CACHE_KEY = "codexmod.components.update.v1";
-const UPDATE_MANIFEST_URL = "https://api.github.com/repos/moonmidas/codex-components/contents/tweaks/codex-components/manifest.json?ref=main";
+const UPDATE_COMMIT_URL = "https://api.github.com/repos/moonmidas/codex-components/commits/main";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 const updateChecks = createUpdateChecks({
+  currentCommit: CURRENT_COMMIT,
   currentVersion: CURRENT_VERSION,
   updateCacheKey: UPDATE_CACHE_KEY,
-  updateManifestUrl: UPDATE_MANIFEST_URL,
+  updateCommitUrl: UPDATE_COMMIT_URL,
   updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS,
   getRenderSettingsPage: () => renderSettingsPage,
 });
 const {
   activeCodexPlusPlusHome,
   checkForUpdates,
-  compareVersions,
   defaultUpdateCheck,
   loadUpdateCache,
-  normalizeManifestResponse,
+  normalizeCommitResponse,
   startUpdateChecks,
   updatePromptText,
 } = updateChecks;
@@ -2620,12 +2621,11 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
     sectionWrap,
     withoutSectionTitle,
     renderSettingsPage,
-    compareVersions,
     checkForUpdates,
     updatePromptText,
     activeCodexPlusPlusHome,
     loadUpdateCache,
-    normalizeManifestResponse,
+    normalizeCommitResponse,
   };
 }
 
