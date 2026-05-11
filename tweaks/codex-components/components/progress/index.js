@@ -2,9 +2,10 @@ function render(body, section, helpers) {
   const { el, sectionWrap, toneClass } = helpers;
   const items = section.items || [];
   const wrap = sectionWrap(section, "codexmod-progress-section");
-  for (const item of items) {
+  items.forEach((item, index) => {
     const value = Math.max(0, Math.min(100, Number(item.percent ?? item.value) || 0));
-    wrap.append(el("div", { className: `codexmod-progress ${toneClass(item.tone || item.color)}` }, [
+    const tone = item.tone || item.color || paletteTone(index);
+    wrap.append(el("div", { className: `codexmod-progress ${toneClass(tone)}` }, [
       el("div", { className: "codexmod-progress-head" }, [
         el("span", {}, [item.label || item.name || "Progress"]),
         el("strong", {}, [`${value}%`]),
@@ -14,8 +15,12 @@ function render(body, section, helpers) {
       ]),
       item.body ? el("p", {}, [item.body]) : null,
     ]));
-  }
+  });
   body.append(wrap);
+}
+
+function paletteTone(index) {
+  return ["blue", "teal", "amber", "coral", "purple", "pink", "green"][index % 7];
 }
 
 module.exports = { type: "progress", render };

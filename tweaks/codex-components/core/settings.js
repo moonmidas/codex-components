@@ -4,7 +4,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   renderer: true,
   mediaEmbeds: true,
   linkPreviews: true,
-  tablePolish: false,
+  tablePolish: true,
   autoPromptHelper: true,
   promptInjection: false,
   onboardingDismissed: false,
@@ -27,7 +27,7 @@ function createSettings({
     try {
       const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
       const settings = { ...DEFAULT_SETTINGS, ...stored };
-      settings.tablePolish = false;
+      settings.tablePolish = true;
       settings.promptInjection = false;
       delete settings.componentBlocks;
       delete settings.dashboards;

@@ -2,14 +2,15 @@ function renderMetrics(body, section, context) {
   const { el, sectionWrap, toneClass } = context;
   const wrap = sectionWrap(section, "codexmod-metrics-section");
   const grid = el("div", { className: "codexmod-metrics" });
-  for (const item of section.items || section.metrics || []) {
-    grid.append(el("article", { className: `codexmod-metric ${toneClass(item.tone || item.color)}` }, [
+  (section.items || section.metrics || []).forEach((item, index) => {
+    const tone = item.tone || item.color || paletteTone(index);
+    grid.append(el("article", { className: `codexmod-metric ${toneClass(tone)}` }, [
       el("span", { className: "codexmod-label" }, [item.label || item.name || "Metric"]),
       el("strong", { className: "codexmod-value" }, [String(item.value ?? "")]),
-      item.sparkline ? renderSparkline(item.sparkline, item.tone || item.color, context) : null,
+      item.sparkline ? renderSparkline(item.sparkline, tone, context) : null,
       item.delta ? el("span", { className: "codexmod-note" }, [trendIcon(item.trend || item.status), item.delta]) : null,
     ]));
-  }
+  });
   wrap.append(grid);
   body.append(wrap);
 }
@@ -37,6 +38,10 @@ function trendIcon(trend) {
   if (["down", "decrease", "bad"].includes(normalized)) return "↘ ";
   if (["warning", "caution"].includes(normalized)) return "⚠ ";
   return "";
+}
+
+function paletteTone(index) {
+  return ["blue", "teal", "amber", "purple", "coral", "pink", "green"][index % 7];
 }
 
 module.exports = { renderMetrics, renderSparkline, trendIcon };

@@ -131,7 +131,7 @@ const DECLARATIVE_COMPONENT_CASES = [
     type: "table",
     columns: [{ key: "name", label: "Name" }, { key: "score", label: "Score" }],
     rows: [{ name: "Alpha", score: 10 }],
-    expected: ".codexmod-table tbody tr",
+    expected: ".codexmod-native-table tbody tr",
   },
   {
     type: "recommendations",
@@ -358,9 +358,9 @@ test("renders table rows from array data as visible cells", () => {
     ],
   });
 
-  const cells = Array.from(document.querySelectorAll(".codexmod-table tbody td")).map((cell) => cell.textContent);
+  const cells = Array.from(document.querySelectorAll(".codexmod-native-table tbody td")).map((cell) => cell.textContent);
   assert.deepEqual(cells.slice(0, 4), ["2026-05-04", "Pasado", "314", "Haz el test:"]);
-  assert.match(document.querySelector(".codexmod-table").textContent, /Estancamiento/);
+  assert.match(document.querySelector(".codexmod-native-table").textContent, /Estancamiento/);
 });
 
 test("renders choices through the direct renderer", () => {
@@ -562,6 +562,23 @@ test("rerenders the same component JSON after Codex++ replaces the chat DOM", ()
   scanDocument(state);
 
   assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+  assert.equal(document.querySelector("pre").style.display, "none");
+});
+
+test("removes stale component mounts when Codex++ replaces only the source node", () => {
+  const raw = "{\"type\":\"table\",\"version\":1,\"title\":\"Table\",\"columns\":[\"Component\"],\"rows\":[[\"table\"]]}";
+  setupDom(`<main><pre class="language-codex-component">${raw}</pre></main>`);
+  const state = testState();
+
+  scanDocument(state);
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+  assert.equal(document.querySelectorAll(".codexmod-native-table").length, 1);
+
+  document.querySelector("pre").outerHTML = `<pre class="language-codex-component">${raw}</pre>`;
+  scanDocument(state);
+
+  assert.equal(document.querySelectorAll("[data-codexmod-component-mount]").length, 1);
+  assert.equal(document.querySelectorAll(".codexmod-native-table").length, 1);
   assert.equal(document.querySelector("pre").style.display, "none");
 });
 
@@ -1147,7 +1164,7 @@ test("renders standalone component JSON from assistant message text", () => {
   scanDocument(state);
 
   assert.equal(document.querySelector(".codexmod-component-title").textContent, "Serenity Links por Quiz");
-  assert.match(document.querySelector(".codexmod-table").textContent, /Haz el test:/);
+  assert.match(document.querySelector(".codexmod-native-table").textContent, /Haz el test:/);
   assert.equal(document.querySelector("[data-message-author-role='assistant']").style.display, "none");
 });
 

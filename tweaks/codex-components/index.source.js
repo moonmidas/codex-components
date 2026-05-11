@@ -220,9 +220,18 @@ function cleanupPromptContractLeak() {
 function scanDocument(state) {
   state.scanQueued = false;
   if (!state.settings.renderer) return;
+  cleanupStaleComponentMounts();
   discoverAndMountBlocks(state, isLocallyOwnedBlock);
   enhanceNativeTables(state);
   enhanceLinksAndMedia(state);
+}
+
+function cleanupStaleComponentMounts() {
+  document.querySelectorAll("[data-codexmod-component-mount]").forEach((mount) => {
+    const source = mount.previousElementSibling;
+    if (source?.dataset?.codexmodComponentSource === "true" && source.style.display === "none") return;
+    mount.remove();
+  });
 }
 
 function discoverAndMountBlocks(state, allowBlock) {
@@ -588,13 +597,13 @@ function renderCallout(body, section) {
 
 function toneClass(tone) {
   const normalized = String(tone || "").toLowerCase();
-  if (["teal", "success", "green", "good", "up"].includes(normalized)) return "tone-teal";
+  if (["teal", "success", "good", "up"].includes(normalized)) return "tone-teal";
+  if (["green"].includes(normalized)) return "tone-green";
   if (["amber", "warning", "caution", "medium"].includes(normalized)) return "tone-amber";
   if (["red", "danger", "bad", "down", "critical"].includes(normalized)) return "tone-red";
   if (["coral"].includes(normalized)) return "tone-coral";
   if (["pink"].includes(normalized)) return "tone-pink";
   if (["purple"].includes(normalized)) return "tone-purple";
-  if (["green"].includes(normalized)) return "tone-green";
   if (["gray", "grey", "neutral"].includes(normalized)) return "tone-gray";
   return "tone-blue";
 }
